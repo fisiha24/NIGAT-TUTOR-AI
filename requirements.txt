@@ -1,0 +1,13 @@
+Flask
+Flask-SQLAlchemy
+Flask-Admin
+groq
+gunicorn
+PyPDF2
+pdfplumber
+Pillow
+pytesseract
+beautifulsoup4
+requests
+googlesearch-python
+python-docx
