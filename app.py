@@ -21,8 +21,23 @@ except ImportError:
     GROQ_AVAILABLE = False
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
-app.config['SECRET_KEY'] = 'mysecretkey'
+
+# ================================================================
+# DATABASE CONFIGURATION - POSTGRESQL FOR RENDER
+# ================================================================
+database_url = os.environ.get('DATABASE_URL')
+
+if database_url:
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    print("✅ Using PostgreSQL database from Render")
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
+    print("⚠️ Using SQLite (local development mode)")
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'mysecretkey')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
@@ -33,7 +48,7 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 # ================================================================
 # GROQ API KEY
 # ================================================================
-GROQ_API_KEY = ""
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', "")
 
 # Initialize Groq client
 groq_client = None
@@ -44,6 +59,8 @@ if GROQ_AVAILABLE and GROQ_API_KEY:
         print("✅ Groq client initialized successfully")
     except Exception as e:
         print(f"⚠️ Groq init failed: {e}")
+else:
+    print("⚠️ Groq not configured - check API key")
 
 db = SQLAlchemy(app)
 
@@ -57,6 +74,7 @@ uploaded_texts = {
 # MODELS (Peace Club ተወግዷል)
 # ================================================================
 class Course(db.Model):
+    __tablename__ = 'course'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=False)
@@ -64,6 +82,7 @@ class Course(db.Model):
     quiz_link = db.Column(db.String(500))
 
 class AnnualPlan(db.Model):
+    __tablename__ = 'annual_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -79,6 +98,7 @@ class AnnualPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class LaboratoryPlan(db.Model):
+    __tablename__ = 'laboratory_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -89,6 +109,7 @@ class LaboratoryPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class DailyPlan(db.Model):
+    __tablename__ = 'daily_plan'
     id = db.Column(db.Integer, primary_key=True)
     teacher_name = db.Column(db.String(100))
     school_name = db.Column(db.String(200))
@@ -747,10 +768,20 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
+# CREATE TABLES ON APPLICATION STARTUP (FOR ALL ENVIRONMENTS)
+# ================================================================
+with app.app_context():
+    try:
+        db.create_all()
+        print("✅ Database tables created/verified successfully.")
+        print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    except Exception as e:
+        print(f"❌ Failed to create tables: {e}")
+        print("⚠️ Please check your database configuration.")
+
+# ================================================================
 # MAIN
 # ================================================================
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
