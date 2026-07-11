@@ -7,7 +7,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from werkzeug.utils import secure_filename
-from groq import Groq
 from datetime import datetime
 from io import BytesIO
 from docx import Document
@@ -19,46 +18,210 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
 app.config['SECRET_KEY'] = 'mysecretkey'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# --- Upload folder initialization ---
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# GROQ API - MULTIPLE KEYS (ROUND ROBIN)
+# MULTI-PROVIDER API KEYS
 # ================================================================
+
+# --- GROQ API Keys ---
 GROQ_API_KEYS = []
-for i in range(1, 6):
+for i in range(1, 3):  # GROQ_API_KEY_1, GROQ_API_KEY_2
     key = os.environ.get(f'GROQ_API_KEY_{i}', '')
     if key:
         GROQ_API_KEYS.append(key)
 
-main_key = os.environ.get('GROQ_API_KEY', '')
-if main_key and main_key not in GROQ_API_KEYS:
-    GROQ_API_KEYS.append(main_key)
+main_groq_key = os.environ.get('GROQ_API_KEY', '')
+if main_groq_key and main_groq_key not in GROQ_API_KEYS:
+    GROQ_API_KEYS.append(main_groq_key)
+
+# --- Gemini API Keys ---
+GEMINI_API_KEYS = []
+for i in range(1, 3):  # GEMINI_API_KEY_1, GEMINI_API_KEY_2
+    key = os.environ.get(f'GEMINI_API_KEY_{i}', '')
+    if key:
+        GEMINI_API_KEYS.append(key)
+
+main_gemini_key = os.environ.get('GEMINI_API_KEY', '')
+if main_gemini_key and main_gemini_key not in GEMINI_API_KEYS:
+    GEMINI_API_KEYS.append(main_gemini_key)
+
+# --- OpenAI API Key ---
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 current_key_index = 0
+current_provider_index = 0
+providers = []
 
-def get_groq_client():
+if GROQ_API_KEYS:
+    providers.append('groq')
+if GEMINI_API_KEYS:
+    providers.append('gemini')
+if OPENAI_API_KEY:
+    providers.append('openai')
+
+print(f"✅ Loaded {len(GROQ_API_KEYS)} Groq API keys")
+print(f"✅ Loaded {len(GEMINI_API_KEYS)} Gemini API keys")
+print(f"✅ Loaded {'Yes' if OPENAI_API_KEY else 'No'} OpenAI API key")
+print(f"✅ Available providers: {providers}")
+
+# ================================================================
+# API CLIENTS
+# ================================================================
+
+def get_next_groq_key():
     global current_key_index
     if not GROQ_API_KEYS:
         return None
     key = GROQ_API_KEYS[current_key_index % len(GROQ_API_KEYS)]
     current_key_index += 1
-    print(f"🔑 Using Groq API Key #{current_key_index % len(GROQ_API_KEYS)}")
-    return Groq(api_key=key)
+    return key
 
-print(f"✅ Loaded {len(GROQ_API_KEYS)} Groq API keys")
+def get_next_gemini_key():
+    global current_key_index
+    if not GEMINI_API_KEYS:
+        return None
+    key = GEMINI_API_KEYS[current_key_index % len(GEMINI_API_KEYS)]
+    current_key_index += 1
+    return key
+
+def get_next_provider():
+    global current_provider_index
+    if not providers:
+        return None
+    provider = providers[current_provider_index % len(providers)]
+    current_provider_index += 1
+    return provider
+
+# ================================================================
+# AI RESPONSE FUNCTION (MULTI-PROVIDER)
+# ================================================================
+def get_ai_response(system_prompt, user_query):
+    """Get response from Groq, Gemini, or OpenAI (round-robin)"""
+    
+    # የሚቀጥለውን አቅራቢ ያግኙ
+    provider = get_next_provider()
+    if provider is None:
+        return "⚠️ No API keys available. Please add at least one API key."
+    
+    print(f"🔑 Using provider: {provider}")
+    
+    try:
+        if provider == 'groq':
+            return get_groq_response(system_prompt, user_query)
+        elif provider == 'gemini':
+            return get_gemini_response(system_prompt, user_query)
+        elif provider == 'openai':
+            return get_openai_response(system_prompt, user_query)
+        else:
+            return f"⚠️ Unknown provider: {provider}"
+            
+    except Exception as e:
+        print(f"⚠️ {provider} error: {e}")
+        return f"AI Error ({provider}): {str(e)}"
+
+# ================================================================
+# GROQ RESPONSE
+# ================================================================
+def get_groq_response(system_prompt, user_query):
+    try:
+        from groq import Groq
+        key = get_next_groq_key()
+        if key is None:
+            return "⚠️ No Groq API keys available."
+        
+        client = Groq(api_key=key)
+        print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
+        
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.05,
+            max_tokens=512,
+            top_p=0.85,
+        )
+        
+        if chat_completion and chat_completion.choices:
+            print("✅ Groq response received")
+            return chat_completion.choices[0].message.content
+            
+    except Exception as e:
+        print(f"⚠️ Groq error: {e}")
+        raise e
+    
+    return "⚠️ No response from Groq."
+
+# ================================================================
+# GEMINI RESPONSE
+# ================================================================
+def get_gemini_response(system_prompt, user_query):
+    try:
+        import google.generativeai as genai
+        key = get_next_gemini_key()
+        if key is None:
+            return "⚠️ No Gemini API keys available."
+        
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        print("🤖 Using Gemini API...")
+        
+        # Combine system prompt and user query
+        full_prompt = f"{system_prompt}\n\nUser: {user_query}"
+        response = model.generate_content(full_prompt)
+        
+        if response and response.text:
+            print("✅ Gemini response received")
+            return response.text
+            
+    except Exception as e:
+        print(f"⚠️ Gemini error: {e}")
+        raise e
+    
+    return "⚠️ No response from Gemini."
+
+# ================================================================
+# OPENAI RESPONSE
+# ================================================================
+def get_openai_response(system_prompt, user_query):
+    try:
+        from openai import OpenAI
+        if not OPENAI_API_KEY:
+            return "⚠️ No OpenAI API key available."
+        
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        print("🤖 Using OpenAI API...")
+        
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ],
+            model="gpt-3.5-turbo",
+            temperature=0.05,
+            max_tokens=512,
+        )
+        
+        if response and response.choices:
+            print("✅ OpenAI response received")
+            return response.choices[0].message.content
+            
+    except Exception as e:
+        print(f"⚠️ OpenAI error: {e}")
+        raise e
+    
+    return "⚠️ No response from OpenAI."
 
 db = SQLAlchemy(app)
 
-# --- In-memory storage for uploaded content ---
-uploaded_texts = {
-    'pdf': [],
-    'images': []
-}
+uploaded_texts = {'pdf': [], 'images': []}
 
 # ================================================================
 # HELPER FUNCTIONS
@@ -71,7 +234,7 @@ def detect_language(text):
         return 'amharic'
     return 'english'
 
-def summarize_for_context(text, max_chars=4000):  # ቀንሷል
+def summarize_for_context(text, max_chars=4000):
     if len(text) <= max_chars:
         return text
     first_part = text[:int(max_chars * 0.7)]
@@ -254,7 +417,6 @@ class PeaceClubActivity(db.Model):
     sene = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# --- Admin Views ---
 admin = Admin(app, name='Nigat Admin')
 admin.add_view(ModelView(Course, db))
 admin.add_view(ModelView(AnnualPlan, db))
@@ -318,7 +480,6 @@ def upload_file():
             file_size = os.path.getsize(filepath) / (1024 * 1024)
             text = extract_pdf_text(filepath)
             
-            # የተቀነሰ ገደብ
             if file_size > 30:
                 max_chars = 3000
             elif file_size > 15:
@@ -392,7 +553,7 @@ def ask_ai():
     
     pdf_text = session.get('pdf_context', '')
     if pdf_text:
-        if len(pdf_text) > 3500:  # ቀንሷል
+        if len(pdf_text) > 3500:
             pdf_text = pdf_text[:3500] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print(f"📄 Using PDF from session: {session.get('pdf_filename', 'unknown')}")
@@ -581,38 +742,6 @@ def ask_ai():
         answer = remove_duplicate_sentences(answer)
     
     return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
-
-# ================================================================
-# AI RESPONSE FUNCTION
-# ================================================================
-def get_ai_response(system_prompt, user_query):
-    client = get_groq_client()
-    if client is None:
-        return "⚠️ No Groq API keys available. Please add at least one API key."
-    
-    try:
-        print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
-        
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.05,
-            max_tokens=1024,  # ቀንሷል
-            top_p=0.85,
-        )
-        
-        if chat_completion and chat_completion.choices:
-            print("✅ Groq response received")
-            return chat_completion.choices[0].message.content
-            
-    except Exception as e:
-        print(f"⚠️ Groq error: {e}")
-        return f"AI Error: {str(e)}"
-    
-    return "⚠️ No response from AI service."
 
 # ================================================================
 # DOWNLOAD WORD
@@ -895,7 +1024,6 @@ def peaceclub_create():
         db.session.add(plan)
         db.session.flush()
         
-        # Save activities
         activity_names = request.form.getlist('activity_name[]')
         hamle_values = request.form.getlist('hamle')
         nehase_values = request.form.getlist('nehase')
@@ -931,7 +1059,6 @@ def peaceclub_create():
                 )
                 db.session.add(activity)
         
-        # Save student members
         student_names = request.form.getlist('student_name[]')
         student_grades = request.form.getlist('student_grade[]')
         student_data = []
@@ -943,7 +1070,6 @@ def peaceclub_create():
                 })
         plan.student_members = json.dumps(student_data)
         
-        # Save teacher members
         teacher_names = request.form.getlist('teacher_name[]')
         teacher_grades = request.form.getlist('teacher_grade[]')
         teacher_data = []
@@ -998,11 +1124,9 @@ def peaceclub_edit(plan_id):
         plan.challenges = request.form.get('challenges')
         plan.solutions = request.form.get('solutions')
         
-        # Delete old activities
         for activity in activities:
             db.session.delete(activity)
         
-        # Add new activities
         activity_names = request.form.getlist('activity_name[]')
         hamle_values = request.form.getlist('hamle')
         nehase_values = request.form.getlist('nehase')
@@ -1038,7 +1162,6 @@ def peaceclub_edit(plan_id):
                 )
                 db.session.add(activity)
         
-        # Update student members
         student_names = request.form.getlist('student_name[]')
         student_grades = request.form.getlist('student_grade[]')
         student_data = []
@@ -1050,7 +1173,6 @@ def peaceclub_edit(plan_id):
                 })
         plan.student_members = json.dumps(student_data)
         
-        # Update teacher members
         teacher_names = request.form.getlist('teacher_name[]')
         teacher_grades = request.form.getlist('teacher_grade[]')
         teacher_data = []
