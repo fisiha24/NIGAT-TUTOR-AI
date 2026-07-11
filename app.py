@@ -2,7 +2,9 @@ import os
 import json
 import re
 import uuid
-import hashlib
+import pickle
+import numpy as np
+import requests
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -19,219 +21,238 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
 app.config['SECRET_KEY'] = 'mysecretkey'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB - አይቀየርም!
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# FAISS storage directory
+FAISS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'faiss_indexes')
+if not os.path.exists(FAISS_DIR):
+    os.makedirs(FAISS_DIR)
 
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# GROQ API
-# ================================================================
-GROQ_API_KEYS = []
-for i in range(1, 4):
-    key = os.environ.get(f'GROQ_API_KEY_{i}', '')
-    if key:
-        GROQ_API_KEYS.append(key)
-
-main_groq_key = os.environ.get('GROQ_API_KEY', '')
-if main_groq_key and main_groq_key not in GROQ_API_KEYS:
-    GROQ_API_KEYS.append(main_groq_key)
-
-current_key_index = 0
-
-def get_next_groq_key():
-    global current_key_index
-    if not GROQ_API_KEYS:
-        return None
-    key = GROQ_API_KEYS[current_key_index % len(GROQ_API_KEYS)]
-    current_key_index += 1
-    return key
-
-print(f"✅ Loaded {len(GROQ_API_KEYS)} Groq API keys")
-
-db = SQLAlchemy(app)
-
-# ================================================================
-# SMART CONTEXT MANAGEMENT
+# OPENROUTER CONFIGURATION - 100% FREE MODELS
 # ================================================================
 
-class DocumentChunk:
-    """የPDF ክፍልፋዮችን ለማስተዳደር"""
-    def __init__(self, text, page_num, chunk_id):
-        self.text = text
-        self.page_num = page_num
-        self.chunk_id = chunk_id
-        self.keywords = self._extract_keywords(text)
-    
-    def _extract_keywords(self, text):
-        """ቁልፍ ቃላትን ከጽሑፉ ያውጣል"""
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-        return set(words[:50])
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-class DocumentStore:
-    """የPDF ጽሑፎችን በማህደረ ትውስታ ውስጥ ያስቀምጣል"""
-    def __init__(self):
-        self.documents = {}  # session_id -> full_text
-        self.chunks = {}     # session_id -> list of DocumentChunk
-        self.chunk_size = 1000  # ፊደላት በአንድ ክፍል
-    
-    def store_document(self, session_id, text, filename):
-        """ሙሉ ጽሑፉን ያስቀምጣል እና በክፍል ይከፋፍላል"""
-        self.documents[session_id] = {
-            'text': text,
-            'filename': filename,
-            'length': len(text),
-            'pages': text.count('\n\n') + 1
-        }
-        
-        # ጽሑፉን በክፍል መከፋፈል
-        chunks = []
-        words = text.split()
-        for i in range(0, len(words), self.chunk_size):
-            chunk_text = ' '.join(words[i:i+self.chunk_size])
-            chunk_id = f"chunk_{i//self.chunk_size + 1}"
-            page_num = (i // (self.chunk_size * 5)) + 1  # ግምታዊ ገጽ
-            chunks.append(DocumentChunk(chunk_text, page_num, chunk_id))
-        
-        self.chunks[session_id] = chunks
-        print(f"📚 Stored {len(chunks)} chunks for session {session_id}")
-        return len(chunks)
-    
-    def get_relevant_chunks(self, session_id, query, top_k=3):
-        """ከጥያቄው ጋር የሚዛመዱ ክፍሎችን ያገኛል"""
-        if session_id not in self.chunks:
-            return []
-        
-        query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
-        if not query_words:
-            # ምንም ቁልፍ ቃል ከሌለ የመጀመሪያዎቹን ክፍሎች ይመልሳል
-            return self.chunks[session_id][:top_k]
-        
-        # የውጤት ውጤት አስላ
-        scored_chunks = []
-        for chunk in self.chunks[session_id]:
-            common = len(query_words & chunk.keywords)
-            score = common / max(len(query_words), 1)
-            if score > 0:
-                scored_chunks.append((score, chunk))
-        
-        scored_chunks.sort(key=lambda x: x[0], reverse=True)
-        return [chunk for _, chunk in scored_chunks[:top_k]]
-    
-    def get_full_text(self, session_id):
-        """ሙሉ ጽሑፉን ይመልሳል"""
-        if session_id in self.documents:
-            return self.documents[session_id]['text']
-        return None
-    
-    def clear(self, session_id):
-        """የአንድን ክፍለ ጊዜ መረጃ ያጸዳል"""
-        if session_id in self.documents:
-            del self.documents[session_id]
-        if session_id in self.chunks:
-            del self.chunks[session_id]
+# Free models with fallback support
+FREE_MODELS = [
+    "google/gemini-2.0-flash-lite-preview-02-05:free",
+    "google/gemini-2.0-flash-exp:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "microsoft/phi-3-mini-128k-instruct:free",
+]
 
-# Global document store
-doc_store = DocumentStore()
+current_model_index = 0
+model_failures = {}  # Track failed models to skip them temporarily
+
+def get_next_model():
+    """Get next available free model"""
+    global current_model_index
+    available_models = [m for m in FREE_MODELS if m not in model_failures]
+    if not available_models:
+        # Reset if all models failed
+        model_failures.clear()
+        available_models = FREE_MODELS
+    
+    model = available_models[current_model_index % len(available_models)]
+    current_model_index += 1
+    return model
+
+def get_ai_response(system_prompt, user_query, context_chunks):
+    """Get response from OpenRouter with fallback support"""
+    
+    if not OPENROUTER_API_KEY:
+        return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
+    
+    # Build context from chunks
+    context_text = "\n\n---\n\n".join(context_chunks) if context_chunks else "No context available."
+    
+    # Detect prompt type
+    prompt_type = detect_prompt_type(user_query)
+    prompt_template = get_prompt_template(prompt_type)
+    
+    # Detect language
+    if detect_language(user_query) == 'amharic':
+        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
+    else:
+        lang_instruction = "You MUST respond in English."
+    
+    # Build full prompt
+    full_prompt = (
+        f"{system_prompt}\n\n"
+        f"=== LANGUAGE ===\n{lang_instruction}\n\n"
+        f"=== TASK ===\n{prompt_template}\n\n"
+        f"=== CONTEXT ===\n{context_text}\n\n"
+        f"=== USER QUESTION ===\n{user_query}"
+    )
+    
+    # Estimate token count
+    estimated_tokens = len(full_prompt) // 4
+    print(f"📊 Estimated tokens: {estimated_tokens}")
+    
+    # Try models with fallback
+    max_attempts = len(FREE_MODELS) * 2
+    for attempt in range(max_attempts):
+        model = get_next_model()
+        print(f"🤖 Attempt {attempt+1}: Using {model}")
+        
+        try:
+            response = requests.post(
+                OPENROUTER_BASE_URL,
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://nigat-tutor-ai.onrender.com",
+                    "X-Title": "Nigat Tutor AI"
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": full_prompt}
+                    ],
+                    "temperature": 0.05,
+                    "max_tokens": 1024,
+                },
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'choices' in data and data['choices']:
+                    print(f"✅ Response received from {model}")
+                    # Remove failed model from failures
+                    if model in model_failures:
+                        del model_failures[model]
+                    return data['choices'][0]['message']['content']
+            else:
+                # Log error and mark model as failed
+                error_msg = response.text[:200] if response.text else "Unknown error"
+                print(f"⚠️ {model} error: {response.status_code} - {error_msg}")
+                model_failures[model] = True
+                
+                # If rate limit or quota exceeded, try next model
+                if response.status_code == 429:
+                    print(f"⏳ Rate limit on {model}, switching to next model...")
+                    continue
+                    
+        except requests.exceptions.Timeout:
+            print(f"⏰ Timeout on {model}, trying next...")
+            model_failures[model] = True
+            continue
+        except Exception as e:
+            print(f"⚠️ Error with {model}: {e}")
+            model_failures[model] = True
+            continue
+    
+    return "⚠️ All available models failed. Please try again later or check your OpenRouter API key."
 
 # ================================================================
-# SMART PROMPT SYSTEM
+# PROMPT MANAGEMENT
 # ================================================================
 
-class PromptManager:
-    """የተለያዩ ጥያቄዎችን ለማስተዳደር"""
-    
-    BASE_SYSTEM = "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke."
-    
-    PROMPTS = {
+def detect_prompt_type(query):
+    query_lower = query.lower()
+    if any(w in query_lower for w in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
+        return 'daily_lesson'
+    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly']):
+        return 'annual_plan'
+    elif any(w in query_lower for w in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
+        return 'exam'
+    elif any(w in query_lower for w in ['summary', 'summarize', 'ማጠቃለያ']):
+        return 'summary'
+    return 'general'
+
+def get_prompt_template(prompt_type):
+    templates = {
         'daily_lesson': """
-=== DAILY LESSON PLAN TEMPLATE ===
-Generate a daily lesson plan using this format:
+=== DAILY LESSON PLAN ===
+Generate a complete daily lesson plan with this structure:
 
-# SCHOOL INFORMATION
-**School Name:** [SCHOOL_NAME]
-**Teacher Name:** [TEACHER_NAME]
-**Grade and Section:** [GRADE_AND_SECTION]
-**Subject:** [SUBJECT]
-**Date:** [DATE]
-**Unit:** [UNIT_NUMBER - UNIT_TITLE]
-**Lesson Topic:** [LESSON_TOPIC]
-**Page:** [PAGE]
+1. SCHOOL INFORMATION: School Name, Teacher Name, Grade/Section, Subject, Date, Unit, Topic, Page
+2. LESSON OVERVIEW: Rationale, Prerequisites, Competencies (3-5 bullet points)
+3. LESSON STAGES: A table with: Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment
+4. SUPPORT FOR LEARNERS: Table with: Category (Slow/Medium/Fast) | Support Strategies
+5. APPROVALS: Table with: Role | Name | Signature | Date
+6. TEACHER'S SELF-ASSESSMENT: Brief reflection
 
-# LESSON OVERVIEW
-**Rationale:** [RATIONALE]
-**Pre-requisite Knowledge:** [PREREQUISITES]
-**Competencies:** [LIST]
-
-# LESSON STAGES (TABLE)
-| Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment |
-
-# SUPPORT FOR LEARNERS
-| Category | Support Strategies |
-
-# APPROVALS (TABLE)
-| Role | Name | Signature | Date |
-
-# TEACHER'S SELF-ASSESSMENT
-[SELF_ASSESSMENT]
+Use information from the provided context to fill in the content.
 """,
-        
         'annual_plan': """
-=== ANNUAL LESSON PLAN TEMPLATE ===
-Generate an annual lesson plan using this format:
+=== ANNUAL LESSON PLAN ===
+Generate an annual lesson plan with this structure:
 
-# ANNUAL LESSON PLAN
-**School Name:** [SCHOOL_NAME]
-**Teacher Name:** [TEACHER_NAME]
-**Subject:** [SUBJECT]
-**Grade:** [GRADE]
-**Academic Year:** [YEAR]
+1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Academic Year
+2. TABLE: Month | Week | Topics | Objectives | Methodology | Evaluation
 
-| Month | Week | Topics | Objectives | Methodology | Evaluation |
+Use information from the provided context.
 """,
-        
         'exam': """
 === EXAM GENERATOR ===
 Generate exam questions based on the provided content.
-Include multiple choice, true/false, and short answer questions.
+Include:
+- Multiple choice questions (4 options each)
+- True/False questions
+- Short answer questions
+
+Use the context to create accurate, relevant questions.
+""",
+        'summary': """
+=== SUMMARY GENERATOR ===
+Create a comprehensive summary of the provided content.
+Include:
+- Main topics and key points
+- Important concepts
+- Key terms and definitions
+
+Keep the summary well-structured and easy to read.
+""",
+        'general': """
+=== GENERAL ASSISTANCE ===
+Answer the user's question based on the provided context.
+Be helpful, accurate, and cite specific information from the context.
+If the context doesn't contain the answer, say so clearly.
 """
     }
-    
-    @staticmethod
-    def get_prompt(prompt_type):
-        """የሚፈለገውን ፕሮምፕት ይመልሳል"""
-        return PromptManager.PROMPTS.get(prompt_type, "")
-    
-    @staticmethod
-    def detect_prompt_type(query):
-        """ከጥያቄው ውስጥ የፕሮምፕት አይነት ይለያል"""
-        query_lower = query.lower()
-        if any(word in query_lower for word in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
-            return 'daily_lesson'
-        elif any(word in query_lower for word in ['annual', 'ዓመታዊ', 'yearly']):
-            return 'annual_plan'
-        elif any(word in query_lower for word in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
-            return 'exam'
-        return 'general'
+    return templates.get(prompt_type, templates['general'])
 
 # ================================================================
-# TOKEN COUNTER (ለGroq ገደብ ለመከታተል)
+# TOKEN MANAGER
 # ================================================================
-def estimate_tokens(text):
-    """ግምታዊ የቶከን ብዛት ያሰላል"""
-    return len(text) // 4  # ሞቃታማ ግምት
 
-def truncate_to_limit(text, max_tokens=5000):
-    """ጽሑፉን ወደተፈለገው ገደብ ያሳጥራል"""
-    if estimate_tokens(text) <= max_tokens:
-        return text
-    chars = max_tokens * 4
-    return text[:chars] + "\n\n[...truncated...]"
+class TokenManager:
+    MAX_TOKENS = 5000
+    
+    @staticmethod
+    def estimate_tokens(text):
+        return len(text) // 4
+    
+    @staticmethod
+    def build_context(chunks, max_tokens=MAX_TOKENS):
+        if not chunks:
+            return "", 0
+        
+        context_parts = []
+        total_tokens = 0
+        
+        for i, chunk in enumerate(chunks):
+            chunk_tokens = TokenManager.estimate_tokens(chunk)
+            if total_tokens + chunk_tokens > max_tokens - 500:
+                break
+            context_parts.append(f"--- Source {i+1} ---\n{chunk}")
+            total_tokens += chunk_tokens
+        
+        return "\n\n".join(context_parts), len(context_parts)
 
 # ================================================================
 # HELPER FUNCTIONS
 # ================================================================
+
 def detect_language(text):
     if not text:
         return 'english'
@@ -240,92 +261,257 @@ def detect_language(text):
         return 'amharic'
     return 'english'
 
-def extract_pdf_text(filepath):
-    try:
-        import pdfplumber
-        text = ""
-        with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n\n"
-        return text if text else "No text found in PDF."
-    except Exception as e:
-        return f"PDF extraction error: {str(e)}"
-
 def remove_duplicate_sentences(text):
     if not text:
         return text
     sentences = re.split(r'(?<=[.!?])\s+', text)
     seen = set()
-    unique_sentences = []
+    unique = []
     for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
+        s = sentence.strip()
+        if not s or len(s) < 5:
             continue
-        normalized = sentence.lower()
-        if normalized in seen:
-            continue
-        if len(sentence) < 5:
-            continue
-        seen.add(normalized)
-        unique_sentences.append(sentence)
-    return ' '.join(unique_sentences)
+        norm = s.lower()
+        if norm not in seen:
+            seen.add(norm)
+            unique.append(s)
+    return ' '.join(unique)
 
-# ================================================================
-# AI RESPONSE FUNCTION (የተሻሻለ)
-# ================================================================
-def get_ai_response(system_prompt, user_query, context):
-    """Smart context management ያለው AI ጥሪ"""
-    
+def extract_pdf_text_streaming(filepath):
+    """Extract PDF text page by page"""
     try:
-        from groq import Groq
-        key = get_next_groq_key()
-        if key is None:
-            return "⚠️ No Groq API keys available."
+        import pdfplumber
+        text_parts = []
+        total_pages = 0
         
-        # 1. የፕሮምፕት አይነት መለየት
-        prompt_type = PromptManager.detect_prompt_type(user_query)
-        prompt_template = PromptManager.get_prompt(prompt_type)
+        with pdfplumber.open(filepath) as pdf:
+            total_pages = len(pdf.pages)
+            for i, page in enumerate(pdf.pages):
+                page_text = page.extract_text()
+                if page_text:
+                    text_parts.append(page_text)
+                if (i + 1) % 10 == 0:
+                    print(f"📄 Extracted page {i+1}/{total_pages}")
         
-        # 2. የቶከን ገደብ ማስላት
-        full_prompt = f"{system_prompt}\n\n{prompt_template}\n\nContext:\n{context}\n\nUser: {user_query}"
-        estimated_tokens = estimate_tokens(full_prompt)
-        
-        print(f"📊 Estimated tokens: {estimated_tokens}")
-        
-        # 3. ከገደብ በላይ ከሆነ አሳጥር
-        if estimated_tokens > 5000:
-            print("⚠️ Reducing context to fit token limit...")
-            context = truncate_to_limit(context, 3000)
-            full_prompt = f"{system_prompt}\n\n{prompt_template}\n\nContext:\n{context}\n\nUser: {user_query}"
-        
-        client = Groq(api_key=key)
-        print(f"🤖 Using Groq API ({prompt_type} prompt)...")
-        
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_prompt}
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.05,
-            max_tokens=1024,
-            top_p=0.85,
-        )
-        
-        if chat_completion and chat_completion.choices:
-            print("✅ Groq response received")
-            return chat_completion.choices[0].message.content
-            
+        full_text = "\n\n".join(text_parts)
+        return full_text, total_pages if full_text else "No text found in PDF.", 0
     except Exception as e:
-        print(f"⚠️ Groq error: {e}")
-        return f"AI Error: {str(e)}"
-    
-    return "⚠️ No response from AI service."
+        return f"PDF extraction error: {str(e)}", 0
 
 # ================================================================
-# MODELS
+# EMBEDDING MODEL (Singleton)
+# ================================================================
+
+_embedding_model = None
+
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            print("🔄 Loading embedding model...")
+            _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            print("✅ Embedding model loaded")
+        except ImportError:
+            print("⚠️ sentence-transformers not installed!")
+            _embedding_model = None
+    return _embedding_model
+
+def get_embedding(text):
+    model = get_embedding_model()
+    if model is None:
+        import hashlib
+        words = text.lower().split()
+        vector = np.zeros(384)
+        for word in words[:100]:
+            h = hashlib.md5(word.encode()).hexdigest()
+            for i in range(min(8, len(h))):
+                vector[i % 384] += (int(h[i], 16) - 8) / 16
+        norm = np.linalg.norm(vector)
+        return vector / (norm + 1e-8)
+    try:
+        return model.encode(text, normalize_embeddings=True)
+    except:
+        return np.zeros(384)
+
+# ================================================================
+# RAG SYSTEM
+# ================================================================
+
+class EnterpriseRAG:
+    def __init__(self):
+        self.doc_metadata = {}
+        self.chunk_texts = {}
+        self.faiss_indexes = {}
+        self.chunk_size = 500
+        self.overlap = 100
+    
+    def get_index_path(self, session_id):
+        return os.path.join(FAISS_DIR, f"{session_id}.faiss")
+    
+    def get_metadata_path(self, session_id):
+        return os.path.join(FAISS_DIR, f"{session_id}_meta.pkl")
+    
+    def _chunk_text_streaming(self, text):
+        words = text.split()
+        total_words = len(words)
+        for start in range(0, total_words, self.chunk_size - self.overlap):
+            end = min(start + self.chunk_size, total_words)
+            chunk_words = words[start:end]
+            if len(chunk_words) < 20:
+                continue
+            yield ' '.join(chunk_words)
+            if end >= total_words:
+                break
+    
+    def store_document(self, session_id, text, filename, pages=0):
+        self.doc_metadata[session_id] = {
+            'filename': filename,
+            'pages': pages,
+            'word_count': len(text.split()),
+            'chunk_count': 0
+        }
+        
+        try:
+            import faiss
+            embedding_dim = 384
+            faiss_index = faiss.IndexFlatIP(embedding_dim)
+        except ImportError:
+            faiss_index = None
+        
+        chunks = []
+        embeddings = []
+        
+        for chunk_text in self._chunk_text_streaming(text):
+            chunks.append(chunk_text)
+            emb = get_embedding(chunk_text)
+            embeddings.append(emb)
+            
+            if faiss_index is not None and len(embeddings) >= 100:
+                if embeddings:
+                    emb_array = np.array(embeddings).astype('float32')
+                    faiss_index.add(emb_array)
+                    embeddings = []
+        
+        if embeddings and faiss_index is not None:
+            emb_array = np.array(embeddings).astype('float32')
+            faiss_index.add(emb_array)
+        
+        self.chunk_texts[session_id] = chunks
+        self.doc_metadata[session_id]['chunk_count'] = len(chunks)
+        
+        if faiss_index is not None:
+            faiss_path = self.get_index_path(session_id)
+            faiss.write_index(faiss_index, faiss_path)
+            self.faiss_indexes[session_id] = faiss_index
+        
+        meta_path = self.get_metadata_path(session_id)
+        with open(meta_path, 'wb') as f:
+            pickle.dump({
+                'chunks': chunks,
+                'metadata': self.doc_metadata[session_id]
+            }, f)
+        
+        print(f"📚 Stored {len(chunks)} chunks")
+        return len(chunks)
+    
+    def _load_faiss_index(self, session_id):
+        if session_id in self.faiss_indexes:
+            return self.faiss_indexes[session_id]
+        try:
+            import faiss
+            faiss_path = self.get_index_path(session_id)
+            if os.path.exists(faiss_path):
+                index = faiss.read_index(faiss_path)
+                self.faiss_indexes[session_id] = index
+                return index
+        except:
+            pass
+        return None
+    
+    def _load_metadata(self, session_id):
+        meta_path = self.get_metadata_path(session_id)
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'rb') as f:
+                    data = pickle.load(f)
+                    self.chunk_texts[session_id] = data.get('chunks', [])
+                    self.doc_metadata[session_id] = data.get('metadata', {})
+                    return data
+            except:
+                pass
+        return None
+    
+    def get_relevant_chunks(self, session_id, query, max_tokens=5000):
+        if session_id not in self.chunk_texts:
+            self._load_metadata(session_id)
+        
+        if session_id not in self.chunk_texts or not self.chunk_texts[session_id]:
+            return []
+        
+        faiss_index = self._load_faiss_index(session_id)
+        chunks = self.chunk_texts[session_id]
+        
+        if faiss_index is not None:
+            try:
+                import faiss
+                query_emb = get_embedding(query)
+                query_emb = np.array([query_emb]).astype('float32')
+                
+                k = min(50, len(chunks))
+                scores, indices = faiss_index.search(query_emb, k)
+                
+                selected = []
+                total_tokens = 0
+                for idx in indices[0]:
+                    if idx < 0 or idx >= len(chunks):
+                        continue
+                    chunk = chunks[idx]
+                    estimated = len(chunk) // 4
+                    if total_tokens + estimated <= max_tokens:
+                        selected.append(chunk)
+                        total_tokens += estimated
+                return selected if selected else [chunks[0]]
+            except:
+                pass
+        
+        # Keyword fallback
+        query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
+        scored = []
+        for i, chunk in enumerate(chunks):
+            chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
+            overlap = len(query_words & chunk_words)
+            if overlap > 0:
+                scored.append((overlap, chunk))
+        
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [chunk for _, chunk in scored[:3]]
+    
+    def get_document_info(self, session_id):
+        if session_id in self.doc_metadata:
+            return self.doc_metadata[session_id]
+        self._load_metadata(session_id)
+        return self.doc_metadata.get(session_id)
+    
+    def clear(self, session_id):
+        if session_id in self.doc_metadata:
+            del self.doc_metadata[session_id]
+        if session_id in self.chunk_texts:
+            del self.chunk_texts[session_id]
+        if session_id in self.faiss_indexes:
+            del self.faiss_indexes[session_id]
+        
+        faiss_path = self.get_index_path(session_id)
+        if os.path.exists(faiss_path):
+            os.remove(faiss_path)
+        meta_path = self.get_metadata_path(session_id)
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+
+rag = EnterpriseRAG()
+
+# ================================================================
+# MODELS (UNCHANGED)
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -465,6 +651,7 @@ admin.add_view(ModelView(PeaceClubActivity, db))
 # ================================================================
 # ROUTES
 # ================================================================
+
 @app.route('/')
 def home():
     try:
@@ -497,8 +684,9 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES (አይቀየርም - 500MB ነው)
+# UPLOAD ROUTES
 # ================================================================
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -515,32 +703,32 @@ def upload_file():
             file.save(filepath)
             
             file_size = os.path.getsize(filepath) / (1024 * 1024)
-            text = extract_pdf_text(filepath)
+            text, pages = extract_pdf_text_streaming(filepath)
             
-            # ሙሉ ጽሑፉን በDocumentStore ውስጥ ማስቀመጥ
+            if not text or text.startswith("PDF extraction error"):
+                return jsonify({'success': False, 'message': f'Error extracting text: {text}'}), 500
+            
             if 'session_id' not in session:
                 session['session_id'] = str(uuid.uuid4())
             
             session_id = session['session_id']
+            num_chunks = rag.store_document(session_id, text, filename, pages)
             
-            # ሙሉ ጽሑፉን በክፍል ማስቀመጥ
-            num_chunks = doc_store.store_document(session_id, text, filename)
-            
-            # ለጊዜው አጭር ማስታወሻ በsession ውስጥ ማስቀመጥ
             session['pdf_filename'] = filename
             session['pdf_size'] = file_size
+            session['pdf_pages'] = pages
             session['pdf_chunks'] = num_chunks
             
             return jsonify({
                 'success': True, 
-                'message': f'PDF uploaded successfully! ({file_size:.1f}MB, {num_chunks} chunks)',
+                'message': f'PDF uploaded and indexed! ({file_size:.1f}MB, {pages} pages, {num_chunks} chunks)',
                 'session_id': session_id,
-                'chunks': num_chunks,
-                'pages': text.count('\n\n') + 1
+                'pages': pages,
+                'chunks': num_chunks
             }), 200
             
         except Exception as e:
-            return jsonify({'success': False, 'message': f'Error processing PDF: {str(e)}'}), 500
+            return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
     else:
         return jsonify({'success': False, 'message': 'Only PDF files are allowed.'}), 400
 
@@ -564,16 +752,17 @@ def upload_image():
 def clear_context():
     session_id = session.get('session_id')
     if session_id:
-        doc_store.clear(session_id)
-    session.pop('pdf_context', None)
+        rag.clear(session_id)
     session.pop('pdf_filename', None)
     session.pop('pdf_size', None)
+    session.pop('pdf_pages', None)
     session.pop('pdf_chunks', None)
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የተሻሻለ - Smart Context)
+# AI CHAT ROUTE (UPDATED with OpenRouter)
 # ================================================================
+
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
     user_query = request.json.get('query', '').strip()
@@ -587,33 +776,27 @@ def ask_ai():
     
     session_id = session.get('session_id')
     
-    # 1. ከጥያቄው ጋር የሚዛመዱ ክፍሎችን ማግኘት
-    relevant_chunks = []
-    if session_id:
-        relevant_chunks = doc_store.get_relevant_chunks(session_id, user_query, top_k=3)
-        print(f"📚 Found {len(relevant_chunks)} relevant chunks")
+    if not session_id:
+        return jsonify({"answer": "Please upload a document first before asking questions."})
     
-    # 2. ተዛማጅ ጽሑፍ መገንባት
-    context = ""
-    if relevant_chunks:
-        for chunk in relevant_chunks:
-            context += f"\n--- {chunk.chunk_id} (Page ~{chunk.page_num}) ---\n{chunk.text}\n"
-    elif session_id:
-        # ምንም ተዛማጅ ክፍል ካልተገኘ ሙሉውን ጽሑፍ አሳጥረው ይላኩ
-        full_text = doc_store.get_full_text(session_id)
-        if full_text:
-            context = truncate_to_limit(full_text, 3000)
-            print("📄 Using full text (truncated)")
-    else:
-        context = "No document uploaded."
+    # Get relevant chunks
+    relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4500)
     
-    # 3. የቋንቋ መመሪያ
+    if not relevant_chunks:
+        return jsonify({"answer": "I couldn't find relevant information in the uploaded document. Please try a different question."})
+    
+    doc_info = rag.get_document_info(session_id)
+    if doc_info:
+        print(f"📄 Document: {doc_info.get('filename', 'unknown')} ({doc_info.get('pages', 0)} pages, {doc_info.get('chunk_count', 0)} chunks)")
+    
+    print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
+    
+    # Build system prompt
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
         language_instruction = "You MUST respond in English."
     
-    # 4. አጭር System Prompt
     system_prompt = (
         "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke.\n\n"
         f"=== LANGUAGE RULE ===\n{language_instruction}\n"
@@ -621,13 +804,13 @@ def ask_ai():
         "=== ABOUT THE CREATOR ===\n"
         "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
         "=== ACCURACY RULE ===\n"
-        "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.'\n\n"
+        "Provide ONLY accurate information based on the provided context. If the context doesn't contain the answer, say so clearly.\n\n"
         "=== AMHARIC SPELLING ===\n"
         "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n"
     )
     
-    # 5. AI መልስ ማግኘት
-    answer = get_ai_response(system_prompt, user_query, context)
+    # Get AI response from OpenRouter with fallback
+    answer = get_ai_response(system_prompt, user_query, relevant_chunks)
     
     if answer:
         answer = remove_duplicate_sentences(answer)
@@ -635,8 +818,9 @@ def ask_ai():
     return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
 
 # ================================================================
-# DOWNLOAD WORD
+# DOWNLOAD WORD (UNCHANGED)
 # ================================================================
+
 @app.route('/download_word', methods=['POST'])
 def download_word():
     data = request.json
@@ -735,8 +919,9 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES
+# LESSON PLAN ROUTES (UNCHANGED)
 # ================================================================
+
 @app.route('/lesson')
 def lesson_home():
     annual_plans = AnnualPlan.query.all()
@@ -884,8 +1069,9 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES
+# PEACE CLUB ROUTES (UNCHANGED)
 # ================================================================
+
 @app.route('/peaceclub')
 def peaceclub_home():
     club_plans = PeaceClubPlan.query.all()
@@ -1099,6 +1285,7 @@ def peaceclub_delete(plan_id):
 # ================================================================
 # CREATE TABLES ON APPLICATION STARTUP
 # ================================================================
+
 with app.app_context():
     try:
         db.create_all()
@@ -1110,6 +1297,7 @@ with app.app_context():
 # ================================================================
 # MAIN
 # ================================================================
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
