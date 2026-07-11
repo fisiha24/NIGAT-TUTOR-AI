@@ -2,7 +2,8 @@ import os
 import json
 import re
 import requests
-from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file
+import uuid
+from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
@@ -266,7 +267,15 @@ def get_ai_response(system_prompt, user_query):
 # ================================================================
 @app.route('/')
 def home():
-    return render_template('index.html', courses=Course.query.all())
+    try:
+        courses = Course.query.all()
+        return render_template('index.html', courses=courses)
+    except Exception as e:
+        print(f"❌ Home route error: {e}")
+        with app.app_context():
+            db.create_all()
+        courses = Course.query.all()
+        return render_template('index.html', courses=courses)
 
 @app.route('/about')
 def about():
@@ -288,11 +297,10 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES
+# UPLOAD ROUTES (የተሻሻለ - Session based)
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Handle PDF upload and return JSON response for AJAX"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded.'}), 400
     
@@ -317,10 +325,23 @@ def upload_file():
                 max_chars = 3000
             
             truncated_text = summarize_for_context(text, max_chars=max_chars)
+            
+            # ===== SESSION-BASED CONTEXT STORAGE =====
+            if 'session_id' not in session:
+                session['session_id'] = str(uuid.uuid4())
+            
+            session['pdf_context'] = truncated_text
+            session['pdf_filename'] = filename
+            session['pdf_size'] = file_size
+            
             uploaded_texts['pdf'] = []
             uploaded_texts['pdf'].append(truncated_text)
             
-            return jsonify({'success': True, 'message': f'PDF uploaded successfully! ({file_size:.1f}MB)'}), 200
+            return jsonify({
+                'success': True, 
+                'message': f'PDF uploaded successfully! ({file_size:.1f}MB)',
+                'session_id': session.get('session_id')
+            }), 200
             
         except Exception as e:
             return jsonify({'success': False, 'message': f'Error processing PDF: {str(e)}'}), 500
@@ -348,10 +369,16 @@ def upload_image():
 def clear_context():
     uploaded_texts['pdf'] = []
     uploaded_texts['images'] = []
-    return jsonify({'message': 'Context cleared'}), 200
+    
+    # ===== SESSION CONTEXT CLEAR =====
+    session.pop('pdf_context', None)
+    session.pop('pdf_filename', None)
+    session.pop('pdf_size', None)
+    
+    return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (WITH FULL LESSON PLAN TEMPLATES)
+# AI CHAT ROUTE (የተሻሻለ - Session context)
 # ================================================================
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
@@ -360,18 +387,29 @@ def ask_ai():
     if not user_query:
         return jsonify({"answer": "Please ask a question."})
     
-    # Detect language of the query
     query_lang = detect_language(user_query)
     print(f"🔍 Detected language: {query_lang}")
     
-    # Build context
+    # ===== CONTEXT BUILDING =====
     context = ""
-    if uploaded_texts['pdf']:
+    
+    # 1. ከSession ውስጥ PDF ጽሑፍ ለማንበብ
+    pdf_text = session.get('pdf_context', '')
+    if pdf_text:
+        if len(pdf_text) > 2500:
+            pdf_text = pdf_text[:2500] + "... [truncated]"
+        context += "PDF Content:\n" + pdf_text + "\n"
+        print(f"📄 Using PDF from session: {session.get('pdf_filename', 'unknown')}")
+    
+    # 2. ከuploaded_texts ያንብቡ
+    elif uploaded_texts['pdf']:
         pdf_text = "\n".join(uploaded_texts['pdf'][-2:])
         if len(pdf_text) > 2500:
             pdf_text = pdf_text[:2500] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
+        print("📄 Using PDF from uploaded_texts")
     
+    # 3. Images
     if uploaded_texts['images']:
         img_text = "\n".join(uploaded_texts['images'][-2:])
         context += "Image Uploaded:\n" + img_text + "\n"
@@ -512,14 +550,13 @@ def ask_ai():
     
     answer = get_ai_response(system_prompt, user_query)
     
-    # Clean up duplicates
     if answer:
         answer = remove_duplicate_sentences(answer)
     
     return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
 
 # ================================================================
-# DOWNLOAD WORD - FIXED (using old structure to prevent splitting)
+# DOWNLOAD WORD - FIXED (የተሻሻለ)
 # ================================================================
 @app.route('/download_word', methods=['POST'])
 def download_word():
@@ -527,93 +564,110 @@ def download_word():
     content = data.get('content', '')
     filename = data.get('filename', 'Nigat_AI_Response')
     
-    doc = Document()
-    doc.add_heading('Nigat AI Tutor Response', 0)
+    if not content:
+        return jsonify({'error': 'No content to download'}), 400
     
-    # Split content into lines and process
-    lines = content.split('\n')
-    in_table = False
-    table_rows = []
-    table_headers = []
-    
-    for line in lines:
-        line = line.strip()
+    try:
+        doc = Document()
+        doc.add_heading('Nigat AI Tutor Response', 0)
         
-        # Check if line is a table row (starts and ends with |)
-        if line.startswith('|') and line.endswith('|'):
-            # Split cells
-            cells = [cell.strip() for cell in line[1:-1].split('|')]
+        # Split content into lines and process
+        lines = content.split('\n')
+        in_table = False
+        table_rows = []
+        table_headers = []
+        
+        for line in lines:
+            line = line.strip()
             
-            # Skip separator rows (|---|---|)
-            if all('---' in cell or ':' in cell for cell in cells):
-                continue
-            
-            if not in_table:
-                in_table = True
-                table_headers = cells
-            else:
-                table_rows.append(cells)
-        else:
-            # If we were in a table and now we're not, render the table
-            if in_table and table_rows:
-                # Determine number of columns
-                num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
+            # Check if line is a table row (starts and ends with |)
+            if line.startswith('|') and line.endswith('|'):
+                # Split cells
+                cells = [cell.strip() for cell in line[1:-1].split('|')]
                 
-                # Create table with header + data rows
+                # Skip separator rows (|---|---|)
+                if all('---' in cell or ':' in cell for cell in cells):
+                    continue
+                
+                if not in_table:
+                    in_table = True
+                    table_headers = cells
+                else:
+                    table_rows.append(cells)
+            else:
+                # If we were in a table and now we're not, render the table
+                if in_table and table_rows:
+                    # Determine number of columns
+                    num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
+                    
+                    if num_cols > 0 and table_headers:
+                        # Create table with header + data rows
+                        table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
+                        table.style = 'Table Grid'
+                        
+                        # Add headers (bold)
+                        for i, header in enumerate(table_headers[:num_cols]):
+                            cell = table.cell(0, i)
+                            cell.text = header
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.bold = True
+                        
+                        # Add data rows
+                        for row_idx, row in enumerate(table_rows):
+                            for col_idx, cell_text in enumerate(row[:num_cols]):
+                                table.cell(row_idx + 1, col_idx).text = cell_text
+                    
+                    # Reset table state
+                    table_rows = []
+                    table_headers = []
+                    in_table = False
+                
+                # Add normal paragraph (skip empty lines)
+                if line and not line.startswith('#'):
+                    # Check if it's a heading (starts with #)
+                    if line.startswith('#'):
+                        heading_level = min(len(line) - len(line.lstrip('#')), 6)
+                        heading_text = line.lstrip('#').strip()
+                        doc.add_heading(heading_text, level=heading_level)
+                    else:
+                        doc.add_paragraph(line)
+        
+        # If table is still open, render it
+        if in_table and table_rows:
+            num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
+            if num_cols > 0 and table_headers:
                 table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
                 table.style = 'Table Grid'
                 
-                # Add headers (bold)
                 for i, header in enumerate(table_headers[:num_cols]):
                     cell = table.cell(0, i)
                     cell.text = header
-                    # Make header bold
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             run.bold = True
                 
-                # Add data rows
                 for row_idx, row in enumerate(table_rows):
                     for col_idx, cell_text in enumerate(row[:num_cols]):
                         table.cell(row_idx + 1, col_idx).text = cell_text
-                
-                # Reset table state
-                table_rows = []
-                table_headers = []
-                in_table = False
-            
-            # Add normal paragraph (skip empty lines)
-            if line:
-                doc.add_paragraph(line)
-    
-    # If table is still open, render it
-    if in_table and table_rows:
-        num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
-        table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
-        table.style = 'Table Grid'
         
-        for i, header in enumerate(table_headers[:num_cols]):
-            cell = table.cell(0, i)
-            cell.text = header
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.bold = True
+        # Save document
+        file_stream = BytesIO()
+        doc.save(file_stream)
+        file_stream.seek(0)
         
-        for row_idx, row in enumerate(table_rows):
-            for col_idx, cell_text in enumerate(row[:num_cols]):
-                table.cell(row_idx + 1, col_idx).text = cell_text
-    
-    # Save document
-    file_stream = BytesIO()
-    doc.save(file_stream)
-    file_stream.seek(0)
-    
-    return send_file(
-        file_stream,
-        as_attachment=True,
-        download_name=f"{filename}.docx",
-        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    )
+        safe_filename = re.sub(r'[^\w\s-]', '', filename)
+        safe_filename = re.sub(r'[-\s]+', '_', safe_filename)
+        
+        return send_file(
+            file_stream,
+            as_attachment=True,
+            download_name=f"{safe_filename}.docx",
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+    except Exception as e:
+        print(f"❌ Word download error: {e}")
+        return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
 # LESSON PLAN ROUTES (Peace Club ተወግዷል)
@@ -765,7 +819,7 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# CREATE TABLES ON APPLICATION STARTUP (FOR ALL ENVIRONMENTS)
+# CREATE TABLES ON APPLICATION STARTUP
 # ================================================================
 with app.app_context():
     try:
