@@ -242,6 +242,24 @@
             font-style: italic;
         }
 
+        .btn-download {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+
+        .btn-download:hover {
+            background: #218838;
+        }
+
         /* ===== CHAT INPUT ===== */
         .chat-input {
             display: flex;
@@ -737,14 +755,14 @@
             document.getElementById('dropdownMenu').classList.remove('show');
         }
 
-        // ===== UPLOAD PDF (በተሻሻለ መልኩ) =====
+        // ===== UPLOAD PDF (የተሻሻለ - Wait message) =====
         function uploadPDF(input) {
             const file = input.files[0];
             if (!file) return;
             
             const messages = document.getElementById('chat-messages');
             
-            // "⏳ Uploading PDF... Please wait..." አሳይ
+            // ⏳ Uploading PDF... Please wait...
             const loadingMsg = document.createElement('div');
             loadingMsg.className = 'loading';
             loadingMsg.id = 'uploadLoading';
@@ -761,11 +779,9 @@
             })
             .then(response => response.json())
             .then(data => {
-                // የloading መልእክት አስወግድ
                 const loading = document.getElementById('uploadLoading');
                 if (loading) loading.remove();
                 
-                // ውጤት አሳይ
                 const msgDiv = document.createElement('div');
                 if (data.success) {
                     msgDiv.className = 'ai-msg';
@@ -901,7 +917,33 @@
             });
         }
 
-        // ===== SEND MESSAGE =====
+        // ===== DOWNLOAD WORD FUNCTION =====
+        function downloadWord(content) {
+            fetch('/download_word', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    content: content,
+                    filename: 'Nigat_AI_Response'
+                })
+            })
+            .then(response => response.blob())
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Nigat_AI_Response.docx';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            })
+            .catch(error => {
+                alert('Error downloading document: ' + error.message);
+            });
+        }
+
+        // ===== SEND MESSAGE (የተሻሻለ - Download Word button) =====
         function sendMessage() {
             const input = document.getElementById('user-input');
             const messages = document.getElementById('chat-messages');
@@ -927,7 +969,22 @@
                 const loading = document.querySelector('.loading');
                 if (loading) loading.remove();
                 const formatted = data.answer.replace(/\n/g, '<br>');
-                messages.innerHTML += `<div class="ai-msg"><strong>🤖 Nigat AI:</strong><br>${formatted}</div>`;
+                
+                // AI መልስ ከDownload አዝራር ጋር
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'ai-msg';
+                msgDiv.innerHTML = `<strong>🤖 Nigat AI:</strong><br>${formatted}`;
+                
+                // Download Word አዝራር
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'btn-download';
+                downloadBtn.textContent = '📥 Download Word';
+                downloadBtn.onclick = function() {
+                    downloadWord(data.answer);
+                };
+                
+                msgDiv.appendChild(downloadBtn);
+                messages.appendChild(msgDiv);
                 messages.scrollTop = messages.scrollHeight;
             })
             .catch(() => {
