@@ -29,27 +29,22 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 # ================================================================
 # GROQ API - MULTIPLE KEYS (ROUND ROBIN)
 # ================================================================
-# ሁሉንም የGROQ API ቁልፎች ከአካባቢ ተለዋዋጮች ያንብቡ
 GROQ_API_KEYS = []
-for i in range(1, 6):  # KEY_1 እስከ KEY_5
+for i in range(1, 6):
     key = os.environ.get(f'GROQ_API_KEY_{i}', '')
     if key:
         GROQ_API_KEYS.append(key)
 
-# ዋናውን GROQ_API_KEY እንዲሁም ያክሉ
 main_key = os.environ.get('GROQ_API_KEY', '')
 if main_key and main_key not in GROQ_API_KEYS:
     GROQ_API_KEYS.append(main_key)
 
-# ቢያንስ አንድ ቁልፍ ካለ
 current_key_index = 0
 
 def get_groq_client():
-    """Round-robin በመጠቀም የሚቀጥለውን Groq ደንበኛ ይመልሳል"""
     global current_key_index
     if not GROQ_API_KEYS:
         return None
-    
     key = GROQ_API_KEYS[current_key_index % len(GROQ_API_KEYS)]
     current_key_index += 1
     print(f"🔑 Using Groq API Key #{current_key_index % len(GROQ_API_KEYS)}")
@@ -69,7 +64,6 @@ uploaded_texts = {
 # HELPER FUNCTIONS
 # ================================================================
 def detect_language(text):
-    """Detect if text is Amharic or English based on Unicode range"""
     if not text:
         return 'english'
     amharic_pattern = re.compile(r'[\u1200-\u137F]')
@@ -77,7 +71,7 @@ def detect_language(text):
         return 'amharic'
     return 'english'
 
-def summarize_for_context(text, max_chars=8000):
+def summarize_for_context(text, max_chars=4000):  # ቀንሷል
     if len(text) <= max_chars:
         return text
     first_part = text[:int(max_chars * 0.7)]
@@ -98,31 +92,23 @@ def extract_pdf_text(filepath):
         return f"PDF extraction error: {str(e)}"
 
 def remove_duplicate_sentences(text):
-    """Remove duplicate sentences from AI response"""
     if not text:
         return text
-    
     sentences = re.split(r'(?<=[.!?])\s+', text)
     seen = set()
     unique_sentences = []
-    
     for sentence in sentences:
         sentence = sentence.strip()
         if not sentence:
             continue
-        
         normalized = sentence.lower()
         if normalized in seen:
             continue
-        
         if len(sentence) < 5 or sentence in ['', ' ', '...']:
             continue
-            
         seen.add(normalized)
         unique_sentences.append(sentence)
-    
     result = ' '.join(unique_sentences)
-    
     if len(result) < 20 and len(text) > 50:
         sentences = re.split(r'(?<=[.!?])\s+', text)
         unique = []
@@ -136,7 +122,6 @@ def remove_duplicate_sentences(text):
                     break
         if unique:
             result = ' '.join(unique)
-    
     return result
 
 # ================================================================
@@ -216,7 +201,6 @@ class DailyPlan(db.Model):
     self_assessment = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# --- Peace Club Models ---
 class PeaceClubPlan(db.Model):
     __tablename__ = 'peace_club_plan'
     id = db.Column(db.Integer, primary_key=True)
@@ -314,7 +298,7 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES (የተሻሻለ)
+# UPLOAD ROUTES
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -334,17 +318,16 @@ def upload_file():
             file_size = os.path.getsize(filepath) / (1024 * 1024)
             text = extract_pdf_text(filepath)
             
-            # ትልቅ ጽሑፍ ለማስተናገድ ገደብ ጨምሯል
-            if file_size > 50:
-                max_chars = 6000
-            elif file_size > 20:
-                max_chars = 5000
+            # የተቀነሰ ገደብ
+            if file_size > 30:
+                max_chars = 3000
+            elif file_size > 15:
+                max_chars = 2500
             else:
-                max_chars = 8000
+                max_chars = 4000
             
             truncated_text = summarize_for_context(text, max_chars=max_chars)
             
-            # Session-based storage
             if 'session_id' not in session:
                 session['session_id'] = str(uuid.uuid4())
             
@@ -393,7 +376,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የተሻሻለ)
+# AI CHAT ROUTE
 # ================================================================
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
@@ -405,31 +388,26 @@ def ask_ai():
     query_lang = detect_language(user_query)
     print(f"🔍 Detected language: {query_lang}")
     
-    # Build context
     context = ""
     
-    # 1. From session
     pdf_text = session.get('pdf_context', '')
     if pdf_text:
-        if len(pdf_text) > 7000:
-            pdf_text = pdf_text[:7000] + "... [truncated]"
+        if len(pdf_text) > 3500:  # ቀንሷል
+            pdf_text = pdf_text[:3500] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print(f"📄 Using PDF from session: {session.get('pdf_filename', 'unknown')}")
     
-    # 2. From uploaded_texts
     elif uploaded_texts['pdf']:
         pdf_text = "\n".join(uploaded_texts['pdf'][-2:])
-        if len(pdf_text) > 7000:
-            pdf_text = pdf_text[:7000] + "... [truncated]"
+        if len(pdf_text) > 3500:
+            pdf_text = pdf_text[:3500] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print("📄 Using PDF from uploaded_texts")
     
-    # 3. Images
     if uploaded_texts['images']:
         img_text = "\n".join(uploaded_texts['images'][-2:])
         context += "Image Uploaded:\n" + img_text + "\n"
     
-    # Language instruction
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
@@ -605,11 +583,9 @@ def ask_ai():
     return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
 
 # ================================================================
-# AI RESPONSE FUNCTION (GROQ - በርካታ Keys)
+# AI RESPONSE FUNCTION
 # ================================================================
 def get_ai_response(system_prompt, user_query):
-    """Get response from Groq API using multiple keys (round-robin)"""
-    
     client = get_groq_client()
     if client is None:
         return "⚠️ No Groq API keys available. Please add at least one API key."
@@ -624,7 +600,7 @@ def get_ai_response(system_prompt, user_query):
             ],
             model="llama-3.3-70b-versatile",
             temperature=0.05,
-            max_tokens=2048,
+            max_tokens=1024,  # ቀንሷል
             top_p=0.85,
         )
         
