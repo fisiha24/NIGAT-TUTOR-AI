@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nigat AI Tutor</title>
+    <title>Nigat Tutor AI - Free AI Tutor for Ethiopian Students & Teachers</title>
     <style>
         /* ===== RESET & BASE ===== */
         * {
@@ -216,7 +216,7 @@
             font-style: italic;
         }
 
-        /* ===== CHAT INPUT - NEW LAYOUT ===== */
+        /* ===== CHAT INPUT ===== */
         .chat-input {
             display: flex;
             gap: 10px;
@@ -245,7 +245,7 @@
             background: rgba(255, 255, 255, 0.08);
         }
 
-        /* ===== PLUS BUTTON (ከSend በግራ) ===== */
+        /* ===== PLUS BUTTON ===== */
         .plus-btn {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -324,7 +324,7 @@
             display: none;
         }
 
-        /* ===== VOICE BUTTON (ከ+ ቀጥሎ) ===== */
+        /* ===== VOICE BUTTON ===== */
         .voice-btn {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -378,7 +378,7 @@
             box-shadow: 0 8px 30px rgba(79, 172, 254, 0.3);
         }
 
-        /* ===== UPLOAD SECTION (hidden by default) ===== */
+        /* ===== UPLOAD SECTION ===== */
         .upload-section {
             background: rgba(255, 255, 255, 0.04);
             border-radius: 12px;
@@ -575,8 +575,8 @@
         <!-- ===== HEADER ===== -->
         <header>
             <div class="logo">
-                <h1>🌟 Nigat AI Tutor</h1>
-                <p>Your AI-Powered Learning Assistant</p>
+                <h1>🌟 Nigat Tutor AI</h1>
+                <p>Free AI Tutor for Ethiopian Students & Teachers | ለኢትዮጵያ ተማሪዎች እና መምህራን ነጻ የAI አስተማሪ</p>
             </div>
             <nav>
                 <a href="/" class="active">🏠 Home</a>
@@ -598,7 +598,7 @@
         <!-- ===== MAIN CONTENT ===== -->
         <div class="main-content">
 
-            <h2>Welcome to Nigat AI Tutor</h2>
+            <h2>Welcome to Nigat Tutor AI</h2>
             <p>Ask me anything about your subjects, lesson plans, or academic questions.</p>
 
             <!-- ===== CHAT SECTION ===== -->
@@ -617,7 +617,7 @@
                 <div class="chat-input">
                     <input type="text" id="user-input" placeholder="Ask anything..." onkeypress="if(event.key==='Enter') sendMessage()">
 
-                    <!-- ===== + PLUS BUTTON (ከSend በግራ) ===== -->
+                    <!-- ===== + PLUS BUTTON ===== -->
                     <div class="dropdown-container">
                         <button class="plus-btn" id="dropdownToggle" onclick="toggleDropdown()">+</button>
                         <div class="dropdown-menu" id="dropdownMenu">
@@ -638,7 +638,7 @@
                         </div>
                     </div>
 
-                    <!-- ===== VOICE BUTTON (ከ+ ቀጥሎ) ===== -->
+                    <!-- ===== VOICE BUTTON ===== -->
                     <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Voice Input">
                         🎤
                     </button>
@@ -647,7 +647,7 @@
                     <button class="send-btn" onclick="sendMessage()">Send</button>
                 </div>
 
-                <!-- ===== UPLOAD SECTION (hidden by default) ===== -->
+                <!-- ===== UPLOAD SECTION ===== -->
                 <div class="upload-section" id="uploadSection">
                     <h4>📤 Upload PDF</h4>
                     <form action="/upload" method="POST" enctype="multipart/form-data">
@@ -680,7 +680,7 @@
 
         <!-- ===== FOOTER ===== -->
         <footer>
-            &copy; 2026 <span>Nigat AI Tutor</span> | Created by Teacher Fisaha Melke
+            &copy; 2026 <span>Nigat Tutor AI</span> | Free AI Tutor for Ethiopian Students & Teachers
         </footer>
 
     </div>
@@ -763,7 +763,6 @@
             const voiceBtn = document.getElementById('voiceBtn');
             
             if (isRecording) {
-                // Stop recording
                 if (recognition) {
                     recognition.stop();
                 }
@@ -773,7 +772,6 @@
                 return;
             }
 
-            // Start recording
             if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                 recognition = new SpeechRecognition();
@@ -844,7 +842,6 @@
                 return;
             }
 
-            // Add user message
             messages.innerHTML += `<div class="user-msg"><strong>You:</strong> ${query}</div>`;
             messages.innerHTML += `<div class="loading">🤔 Thinking...</div>`;
             input.value = '';
