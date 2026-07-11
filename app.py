@@ -1,43 +1,19 @@
 import os
 import json
 import re
-import requests
 import uuid
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from werkzeug.utils import secure_filename
+from groq import Groq
 from datetime import datetime
 from io import BytesIO
 from docx import Document
 
-# ================================================================
-# USE GROQ ONLY (GEMINI DISABLED)
-# ================================================================
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
-
 app = Flask(__name__)
-
-# ================================================================
-# DATABASE CONFIGURATION - POSTGRESQL FOR RENDER
-# ================================================================
-database_url = os.environ.get('DATABASE_URL')
-
-if database_url:
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print("✅ Using PostgreSQL database from Render")
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
-    print("⚠️ Using SQLite (local development mode)")
-
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'mysecretkey')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
@@ -47,21 +23,10 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# GROQ API KEY
+# GROQ API CONFIGURATION
 # ================================================================
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', "")
-
-# Initialize Groq client
-groq_client = None
-
-if GROQ_AVAILABLE and GROQ_API_KEY:
-    try:
-        groq_client = Groq(api_key=GROQ_API_KEY)
-        print("✅ Groq client initialized successfully")
-    except Exception as e:
-        print(f"⚠️ Groq init failed: {e}")
-else:
-    print("⚠️ Groq not configured - check API key")
+client = Groq(api_key=GROQ_API_KEY)
 
 db = SQLAlchemy(app)
 
@@ -71,93 +36,7 @@ uploaded_texts = {
     'images': []
 }
 
-# ================================================================
-# MODELS (Peace Club ተወግዷል)
-# ================================================================
-class Course(db.Model):
-    __tablename__ = 'course'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text, nullable=False)
-    color = db.Column(db.String(20), default='blue')
-    quiz_link = db.Column(db.String(500))
-
-class AnnualPlan(db.Model):
-    __tablename__ = 'annual_plan'
-    id = db.Column(db.Integer, primary_key=True)
-    school_name = db.Column(db.String(200))
-    teacher_name = db.Column(db.String(100))
-    subject = db.Column(db.String(100))
-    grade = db.Column(db.Integer)
-    section = db.Column(db.String(20))
-    year = db.Column(db.Integer)
-    total_days = db.Column(db.Integer)
-    unit_number = db.Column(db.Integer)
-    unit_title = db.Column(db.String(200))
-    unit_objectives = db.Column(db.Text)
-    month_data = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class LaboratoryPlan(db.Model):
-    __tablename__ = 'laboratory_plan'
-    id = db.Column(db.Integer, primary_key=True)
-    school_name = db.Column(db.String(200))
-    teacher_name = db.Column(db.String(100))
-    subject = db.Column(db.String(100))
-    grade = db.Column(db.Integer)
-    year = db.Column(db.Integer)
-    experiment_data = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class DailyPlan(db.Model):
-    __tablename__ = 'daily_plan'
-    id = db.Column(db.Integer, primary_key=True)
-    teacher_name = db.Column(db.String(100))
-    school_name = db.Column(db.String(200))
-    grade = db.Column(db.Integer)
-    section = db.Column(db.String(20))
-    subject = db.Column(db.String(100))
-    date = db.Column(db.Date)
-    unit_number = db.Column(db.Integer)
-    lesson_topic = db.Column(db.String(200))
-    page = db.Column(db.String(20))
-    rationale = db.Column(db.Text)
-    prerequisites = db.Column(db.Text)
-    competencies = db.Column(db.Text)
-    starter_time = db.Column(db.Integer)
-    starter_teacher = db.Column(db.Text)
-    starter_student = db.Column(db.Text)
-    starter_method = db.Column(db.String(100))
-    starter_assessment = db.Column(db.String(100))
-    starter_aids = db.Column(db.String(200))
-    main_time = db.Column(db.Integer)
-    main_teacher = db.Column(db.Text)
-    main_student = db.Column(db.Text)
-    main_method = db.Column(db.String(100))
-    main_assessment = db.Column(db.String(100))
-    main_aids = db.Column(db.String(200))
-    conclude_time = db.Column(db.Integer)
-    conclude_teacher = db.Column(db.Text)
-    conclude_student = db.Column(db.Text)
-    conclude_method = db.Column(db.String(100))
-    conclude_assessment = db.Column(db.String(100))
-    conclude_aids = db.Column(db.String(200))
-    slow_learners = db.Column(db.Text)
-    medium_learners = db.Column(db.Text)
-    fast_learners = db.Column(db.Text)
-    self_assessment = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-# --- Admin Views (Peace Club ተወግዷል) ---
-admin = Admin(app, name='Nigat Admin')
-admin.add_view(ModelView(Course, db))
-admin.add_view(ModelView(AnnualPlan, db))
-admin.add_view(ModelView(LaboratoryPlan, db))
-admin.add_view(ModelView(DailyPlan, db))
-
-# ================================================================
-# HELPER FUNCTIONS
-# ================================================================
+# --- Helper function to detect language ---
 def detect_language(text):
     """Detect if text is Amharic or English based on Unicode range"""
     if not text:
@@ -229,42 +108,139 @@ def remove_duplicate_sentences(text):
     
     return result
 
-# ================================================================
-# AI RESPONSE FUNCTION (GROQ ONLY)
-# ================================================================
-def get_ai_response(system_prompt, user_query):
-    """Get response from Groq API only"""
-    
-    if groq_client is None:
-        return "⚠️ Groq API is not available. Please check your API key."
-    
-    try:
-        print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
-        
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.05,
-            max_tokens=2048,
-            top_p=0.85,
-        )
-        
-        if chat_completion and chat_completion.choices:
-            print("✅ Groq response received")
-            return chat_completion.choices[0].message.content
-            
-    except Exception as e:
-        print(f"⚠️ Groq error: {e}")
-        return f"AI Error: {str(e)}"
-    
-    return "⚠️ No response from AI service."
+# --- Existing Models ---
+class Course(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    color = db.Column(db.String(20), default='blue')
+    quiz_link = db.Column(db.String(500))
 
-# ================================================================
-# ROUTES
-# ================================================================
+class AnnualPlan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    school_name = db.Column(db.String(200))
+    teacher_name = db.Column(db.String(100))
+    subject = db.Column(db.String(100))
+    grade = db.Column(db.Integer)
+    section = db.Column(db.String(20))
+    year = db.Column(db.Integer)
+    total_days = db.Column(db.Integer)
+    unit_number = db.Column(db.Integer)
+    unit_title = db.Column(db.String(200))
+    unit_objectives = db.Column(db.Text)
+    month_data = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class LaboratoryPlan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    school_name = db.Column(db.String(200))
+    teacher_name = db.Column(db.String(100))
+    subject = db.Column(db.String(100))
+    grade = db.Column(db.Integer)
+    year = db.Column(db.Integer)
+    experiment_data = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class DailyPlan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    teacher_name = db.Column(db.String(100))
+    school_name = db.Column(db.String(200))
+    grade = db.Column(db.Integer)
+    section = db.Column(db.String(20))
+    subject = db.Column(db.String(100))
+    date = db.Column(db.Date)
+    unit_number = db.Column(db.Integer)
+    lesson_topic = db.Column(db.String(200))
+    page = db.Column(db.String(20))
+    rationale = db.Column(db.Text)
+    prerequisites = db.Column(db.Text)
+    competencies = db.Column(db.Text)
+    starter_time = db.Column(db.Integer)
+    starter_teacher = db.Column(db.Text)
+    starter_student = db.Column(db.Text)
+    starter_method = db.Column(db.String(100))
+    starter_assessment = db.Column(db.String(100))
+    starter_aids = db.Column(db.String(200))
+    main_time = db.Column(db.Integer)
+    main_teacher = db.Column(db.Text)
+    main_student = db.Column(db.Text)
+    main_method = db.Column(db.String(100))
+    main_assessment = db.Column(db.String(100))
+    main_aids = db.Column(db.String(200))
+    conclude_time = db.Column(db.Integer)
+    conclude_teacher = db.Column(db.Text)
+    conclude_student = db.Column(db.Text)
+    conclude_method = db.Column(db.String(100))
+    conclude_assessment = db.Column(db.String(100))
+    conclude_aids = db.Column(db.String(200))
+    slow_learners = db.Column(db.Text)
+    medium_learners = db.Column(db.Text)
+    fast_learners = db.Column(db.Text)
+    self_assessment = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# --- Peace Club Models ---
+class PeaceClubPlan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    school_name = db.Column(db.String(200))
+    district = db.Column(db.String(200))
+    woreda = db.Column(db.String(100))
+    school_level = db.Column(db.String(200))
+    club_name = db.Column(db.String(200), default='Peace Club / የሰላም ክበብ')
+    teacher_name = db.Column(db.String(100))
+    teacher_signature = db.Column(db.String(100))
+    secretary_name = db.Column(db.String(100))
+    secretary_signature = db.Column(db.String(100))
+    year = db.Column(db.Integer)
+    month = db.Column(db.String(20))
+    vision = db.Column(db.Text)
+    mission = db.Column(db.Text)
+    opportunities = db.Column(db.Text)
+    challenges = db.Column(db.Text)
+    solutions = db.Column(db.Text)
+    action_plan = db.Column(db.Text)
+    student_members = db.Column(db.Text)
+    teacher_members = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def get_action_plan(self):
+        return json.loads(self.action_plan) if self.action_plan else []
+    
+    def get_student_members(self):
+        return json.loads(self.student_members) if self.student_members else []
+    
+    def get_teacher_members(self):
+        return json.loads(self.teacher_members) if self.teacher_members else []
+
+class PeaceClubActivity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    club_plan_id = db.Column(db.Integer, db.ForeignKey('peace_club_plan.id'))
+    activity_number = db.Column(db.Integer)
+    activity_name = db.Column(db.String(500))
+    hamle = db.Column(db.Boolean, default=False)
+    nehase = db.Column(db.Boolean, default=False)
+    meskerem = db.Column(db.Boolean, default=False)
+    tikimt = db.Column(db.Boolean, default=False)
+    hidar = db.Column(db.Boolean, default=False)
+    tahsas = db.Column(db.Boolean, default=False)
+    tir = db.Column(db.Boolean, default=False)
+    yekatit = db.Column(db.Boolean, default=False)
+    megabit = db.Column(db.Boolean, default=False)
+    miazia = db.Column(db.Boolean, default=False)
+    ginbot = db.Column(db.Boolean, default=False)
+    sene = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# --- Admin Views ---
+admin = Admin(app, name='Nigat Admin')
+admin.add_view(ModelView(Course, db))
+admin.add_view(ModelView(AnnualPlan, db))
+admin.add_view(ModelView(LaboratoryPlan, db))
+admin.add_view(ModelView(DailyPlan, db))
+admin.add_view(ModelView(PeaceClubPlan, db))
+admin.add_view(ModelView(PeaceClubActivity, db))
+
+# --- Existing Routes ---
 @app.route('/')
 def home():
     try:
@@ -297,7 +273,7 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES (የተሻሻለ - Session based)
+# UPLOAD ROUTES (የተሻሻለ)
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -369,16 +345,13 @@ def upload_image():
 def clear_context():
     uploaded_texts['pdf'] = []
     uploaded_texts['images'] = []
-    
-    # ===== SESSION CONTEXT CLEAR =====
     session.pop('pdf_context', None)
     session.pop('pdf_filename', None)
     session.pop('pdf_size', None)
-    
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የተሻሻለ - Session context)
+# AI CHAT ROUTE
 # ================================================================
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
@@ -423,7 +396,7 @@ def ask_ai():
         language_instruction = "You MUST respond in English."
     
     # ============================================================
-    # SYSTEM PROMPT - WITH FULL LESSON PLAN TEMPLATES
+    # SYSTEM PROMPT
     # ============================================================
     system_prompt = (
         "You are 'Nigat AI Tutor'. Your creator is Teacher Fisaha Melke.\n\n"
@@ -531,32 +504,63 @@ def ask_ai():
         "**Approved By:** [APPROVER_NAME]\n"
         "**Dates:** ...\n\n"
         
+        "=== PEACE CLUB PLAN TEMPLATE ===\n"
+        "6. When asked to generate a PEACE CLUB PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
+        "# PEACE CLUB ANNUAL PLAN\n"
+        "**School Name:** [SCHOOL_NAME]\n"
+        "**District:** [DISTRICT]\n"
+        "**Woreda:** [WOREDA]\n"
+        "**School Level:** [SCHOOL_LEVEL]\n"
+        "**Club Name:** [CLUB_NAME]\n"
+        "**Teacher Name:** [TEACHER_NAME]\n"
+        "**Secretary Name:** [SECRETARY_NAME]\n"
+        "**Year:** [YEAR]\n"
+        "**Month:** [MONTH]\n\n"
+        "**Vision:** [VISION]\n"
+        "**Mission:** [MISSION]\n"
+        "**Opportunities & Strengths:** [OPPORTUNITIES]\n"
+        "**Challenges & Weaknesses:** [CHALLENGES]\n"
+        "**Solutions:** [SOLUTIONS]\n\n"
+        "| # | Activity | Hamle | Nehase | Meskerem | Tikimt | Hidar | Tahsas | Tir | Yekatit | Megabit | Miazia | Ginbot | Sene |\n"
+        "|---|----------|-------|--------|----------|--------|-------|--------|-----|---------|---------|--------|--------|------|\n"
+        "| 1 | [ACTIVITY_1] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n"
+        "| 2 | [ACTIVITY_2] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n\n"
+        "**Student Members:** [LIST_OF_STUDENTS]\n"
+        "**Teacher Members:** [LIST_OF_TEACHERS]\n\n"
+        
         "=== ACCURACY RULE ===\n"
-        "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.' in the user's language.\n\n"
+        "7. Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.' in the user's language.\n\n"
         
         "=== AMHARIC SPELLING ===\n"
-        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
+        "8. Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
         
         "=== FINAL REMINDER ===\n"
-        "1. TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
-        "2. For Amharic responses, use correct Amharic spelling and script.\n"
-        "3. If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic.\n"
-        "4. NEVER repeat sentences. Write each sentence only ONCE.\n"
-        "5. Write 3-5 sentences for general questions.\n"
-        "6. When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
-        "7. Do NOT change the format or remove any sections.\n"
-        "8. The user should fill in the placeholders [LIKE_THIS] with their own information."
+        "9. TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
+        "10. The user should fill in the placeholders [LIKE_THIS] with their own information.\n"
+        "11. When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
+        "12. Do NOT change the format or remove any sections.\n"
+        "13. For Amharic responses, use correct Amharic spelling and script.\n"
+        "14. If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic."
     )
     
-    answer = get_ai_response(system_prompt, user_query)
-    
-    if answer:
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.05,
+            max_tokens=2048,
+        )
+        answer = chat_completion.choices[0].message.content
         answer = remove_duplicate_sentences(answer)
-    
-    return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
+        return jsonify({"answer": answer})
+    except Exception as e:
+        return jsonify({"answer": f"AI Error: {str(e)}"})
 
 # ================================================================
-# DOWNLOAD WORD - FIXED (የተሻሻለ)
+# DOWNLOAD WORD - የተሻሻለ (Tables በደንብ እንዲያሳይ)
 # ================================================================
 @app.route('/download_word', methods=['POST'])
 def download_word():
@@ -571,7 +575,6 @@ def download_word():
         doc = Document()
         doc.add_heading('Nigat AI Tutor Response', 0)
         
-        # Split content into lines and process
         lines = content.split('\n')
         in_table = False
         table_rows = []
@@ -580,9 +583,11 @@ def download_word():
         for line in lines:
             line = line.strip()
             
+            if not line:
+                continue
+            
             # Check if line is a table row (starts and ends with |)
             if line.startswith('|') and line.endswith('|'):
-                # Split cells
                 cells = [cell.strip() for cell in line[1:-1].split('|')]
                 
                 # Skip separator rows (|---|---|)
@@ -597,15 +602,12 @@ def download_word():
             else:
                 # If we were in a table and now we're not, render the table
                 if in_table and table_rows:
-                    # Determine number of columns
                     num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
                     
                     if num_cols > 0 and table_headers:
-                        # Create table with header + data rows
                         table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
                         table.style = 'Table Grid'
                         
-                        # Add headers (bold)
                         for i, header in enumerate(table_headers[:num_cols]):
                             cell = table.cell(0, i)
                             cell.text = header
@@ -613,25 +615,21 @@ def download_word():
                                 for run in paragraph.runs:
                                     run.bold = True
                         
-                        # Add data rows
                         for row_idx, row in enumerate(table_rows):
                             for col_idx, cell_text in enumerate(row[:num_cols]):
                                 table.cell(row_idx + 1, col_idx).text = cell_text
                     
-                    # Reset table state
                     table_rows = []
                     table_headers = []
                     in_table = False
                 
-                # Add normal paragraph (skip empty lines)
-                if line and not line.startswith('#'):
-                    # Check if it's a heading (starts with #)
-                    if line.startswith('#'):
-                        heading_level = min(len(line) - len(line.lstrip('#')), 6)
-                        heading_text = line.lstrip('#').strip()
-                        doc.add_heading(heading_text, level=heading_level)
-                    else:
-                        doc.add_paragraph(line)
+                # Add normal paragraph
+                if line.startswith('#'):
+                    heading_level = min(len(line) - len(line.lstrip('#')), 6)
+                    heading_text = line.lstrip('#').strip()
+                    doc.add_heading(heading_text, level=heading_level)
+                else:
+                    doc.add_paragraph(line)
         
         # If table is still open, render it
         if in_table and table_rows:
@@ -651,7 +649,6 @@ def download_word():
                     for col_idx, cell_text in enumerate(row[:num_cols]):
                         table.cell(row_idx + 1, col_idx).text = cell_text
         
-        # Save document
         file_stream = BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
@@ -670,7 +667,7 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES (Peace Club ተወግዷል)
+# LESSON PLAN ROUTES
 # ================================================================
 @app.route('/lesson')
 def lesson_home():
@@ -819,16 +816,227 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
+# PEACE CLUB ROUTES
+# ================================================================
+@app.route('/peaceclub')
+def peaceclub_home():
+    club_plans = PeaceClubPlan.query.all()
+    return render_template('peaceclub_home.html', club_plans=club_plans)
+
+@app.route('/peaceclub/create', methods=['GET', 'POST'])
+def peaceclub_create():
+    if request.method == 'POST':
+        plan = PeaceClubPlan(
+            school_name=request.form.get('school_name'),
+            district=request.form.get('district'),
+            woreda=request.form.get('woreda'),
+            school_level=request.form.get('school_level'),
+            club_name=request.form.get('club_name', 'Peace Club / የሰላም ክበብ'),
+            teacher_name=request.form.get('teacher_name'),
+            teacher_signature=request.form.get('teacher_signature'),
+            secretary_name=request.form.get('secretary_name'),
+            secretary_signature=request.form.get('secretary_signature'),
+            year=int(request.form.get('year')) if request.form.get('year') else None,
+            month=request.form.get('month'),
+            vision=request.form.get('vision'),
+            mission=request.form.get('mission'),
+            opportunities=request.form.get('opportunities'),
+            challenges=request.form.get('challenges'),
+            solutions=request.form.get('solutions')
+        )
+        db.session.add(plan)
+        db.session.flush()
+        
+        activity_names = request.form.getlist('activity_name[]')
+        hamle_values = request.form.getlist('hamle')
+        nehase_values = request.form.getlist('nehase')
+        meskerem_values = request.form.getlist('meskerem')
+        tikimt_values = request.form.getlist('tikimt')
+        hidar_values = request.form.getlist('hidar')
+        tahsas_values = request.form.getlist('tahsas')
+        tir_values = request.form.getlist('tir')
+        yekatit_values = request.form.getlist('yekatit')
+        megabit_values = request.form.getlist('megabit')
+        miazia_values = request.form.getlist('miazia')
+        ginbot_values = request.form.getlist('ginbot')
+        sene_values = request.form.getlist('sene')
+        
+        for i, name in enumerate(activity_names):
+            if name.strip():
+                activity = PeaceClubActivity(
+                    club_plan_id=plan.id,
+                    activity_number=i + 1,
+                    activity_name=name.strip(),
+                    hamle=str(i) in hamle_values,
+                    nehase=str(i) in nehase_values,
+                    meskerem=str(i) in meskerem_values,
+                    tikimt=str(i) in tikimt_values,
+                    hidar=str(i) in hidar_values,
+                    tahsas=str(i) in tahsas_values,
+                    tir=str(i) in tir_values,
+                    yekatit=str(i) in yekatit_values,
+                    megabit=str(i) in megabit_values,
+                    miazia=str(i) in miazia_values,
+                    ginbot=str(i) in ginbot_values,
+                    sene=str(i) in sene_values
+                )
+                db.session.add(activity)
+        
+        student_names = request.form.getlist('student_name[]')
+        student_grades = request.form.getlist('student_grade[]')
+        student_data = []
+        for i in range(len(student_names)):
+            if student_names[i].strip():
+                student_data.append({
+                    'name': student_names[i].strip(),
+                    'grade': student_grades[i] if i < len(student_grades) else ''
+                })
+        plan.student_members = json.dumps(student_data)
+        
+        teacher_names = request.form.getlist('teacher_name[]')
+        teacher_grades = request.form.getlist('teacher_grade[]')
+        teacher_data = []
+        for i in range(len(teacher_names)):
+            if teacher_names[i].strip():
+                teacher_data.append({
+                    'name': teacher_names[i].strip(),
+                    'grade': teacher_grades[i] if i < len(teacher_grades) else ''
+                })
+        plan.teacher_members = json.dumps(teacher_data)
+        
+        db.session.commit()
+        flash('Peace Club plan created successfully!', 'success')
+        return redirect(url_for('peaceclub_home'))
+    
+    return render_template('peaceclub_create.html')
+
+@app.route('/peaceclub/view/<int:plan_id>')
+def peaceclub_view(plan_id):
+    plan = PeaceClubPlan.query.get_or_404(plan_id)
+    activities = PeaceClubActivity.query.filter_by(club_plan_id=plan_id).order_by(PeaceClubActivity.activity_number).all()
+    student_members = plan.get_student_members()
+    teacher_members = plan.get_teacher_members()
+    return render_template('peaceclub_view.html', 
+                         plan=plan, 
+                         activities=activities,
+                         student_members=student_members,
+                         teacher_members=teacher_members)
+
+@app.route('/peaceclub/edit/<int:plan_id>', methods=['GET', 'POST'])
+def peaceclub_edit(plan_id):
+    plan = PeaceClubPlan.query.get_or_404(plan_id)
+    activities = PeaceClubActivity.query.filter_by(club_plan_id=plan_id).order_by(PeaceClubActivity.activity_number).all()
+    student_members = plan.get_student_members()
+    teacher_members = plan.get_teacher_members()
+    
+    if request.method == 'POST':
+        plan.school_name = request.form.get('school_name')
+        plan.district = request.form.get('district')
+        plan.woreda = request.form.get('woreda')
+        plan.school_level = request.form.get('school_level')
+        plan.club_name = request.form.get('club_name', 'Peace Club / የሰላም ክበብ')
+        plan.teacher_name = request.form.get('teacher_name')
+        plan.teacher_signature = request.form.get('teacher_signature')
+        plan.secretary_name = request.form.get('secretary_name')
+        plan.secretary_signature = request.form.get('secretary_signature')
+        plan.year = int(request.form.get('year')) if request.form.get('year') else None
+        plan.month = request.form.get('month')
+        plan.vision = request.form.get('vision')
+        plan.mission = request.form.get('mission')
+        plan.opportunities = request.form.get('opportunities')
+        plan.challenges = request.form.get('challenges')
+        plan.solutions = request.form.get('solutions')
+        
+        for activity in activities:
+            db.session.delete(activity)
+        
+        activity_names = request.form.getlist('activity_name[]')
+        hamle_values = request.form.getlist('hamle')
+        nehase_values = request.form.getlist('nehase')
+        meskerem_values = request.form.getlist('meskerem')
+        tikimt_values = request.form.getlist('tikimt')
+        hidar_values = request.form.getlist('hidar')
+        tahsas_values = request.form.getlist('tahsas')
+        tir_values = request.form.getlist('tir')
+        yekatit_values = request.form.getlist('yekatit')
+        megabit_values = request.form.getlist('megabit')
+        miazia_values = request.form.getlist('miazia')
+        ginbot_values = request.form.getlist('ginbot')
+        sene_values = request.form.getlist('sene')
+        
+        for i, name in enumerate(activity_names):
+            if name.strip():
+                activity = PeaceClubActivity(
+                    club_plan_id=plan.id,
+                    activity_number=i + 1,
+                    activity_name=name.strip(),
+                    hamle=str(i) in hamle_values,
+                    nehase=str(i) in nehase_values,
+                    meskerem=str(i) in meskerem_values,
+                    tikimt=str(i) in tikimt_values,
+                    hidar=str(i) in hidar_values,
+                    tahsas=str(i) in tahsas_values,
+                    tir=str(i) in tir_values,
+                    yekatit=str(i) in yekatit_values,
+                    megabit=str(i) in megabit_values,
+                    miazia=str(i) in miazia_values,
+                    ginbot=str(i) in ginbot_values,
+                    sene=str(i) in sene_values
+                )
+                db.session.add(activity)
+        
+        student_names = request.form.getlist('student_name[]')
+        student_grades = request.form.getlist('student_grade[]')
+        student_data = []
+        for i in range(len(student_names)):
+            if student_names[i].strip():
+                student_data.append({
+                    'name': student_names[i].strip(),
+                    'grade': student_grades[i] if i < len(student_grades) else ''
+                })
+        plan.student_members = json.dumps(student_data)
+        
+        teacher_names = request.form.getlist('teacher_name[]')
+        teacher_grades = request.form.getlist('teacher_grade[]')
+        teacher_data = []
+        for i in range(len(teacher_names)):
+            if teacher_names[i].strip():
+                teacher_data.append({
+                    'name': teacher_names[i].strip(),
+                    'grade': teacher_grades[i] if i < len(teacher_grades) else ''
+                })
+        plan.teacher_members = json.dumps(teacher_data)
+        
+        db.session.commit()
+        flash('Peace Club plan updated successfully!', 'success')
+        return redirect(url_for('peaceclub_view', plan_id=plan.id))
+    
+    return render_template('peaceclub_edit.html', 
+                         plan=plan, 
+                         activities=activities,
+                         student_members=student_members,
+                         teacher_members=teacher_members)
+
+@app.route('/peaceclub/delete/<int:plan_id>')
+def peaceclub_delete(plan_id):
+    plan = PeaceClubPlan.query.get_or_404(plan_id)
+    activities = PeaceClubActivity.query.filter_by(club_plan_id=plan_id).all()
+    for activity in activities:
+        db.session.delete(activity)
+    db.session.delete(plan)
+    db.session.commit()
+    flash('Peace Club plan deleted successfully!', 'success')
+    return redirect(url_for('peaceclub_home'))
+
+# ================================================================
 # CREATE TABLES ON APPLICATION STARTUP
 # ================================================================
 with app.app_context():
     try:
         db.create_all()
         print("✅ Database tables created/verified successfully.")
-        print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
-        print("⚠️ Please check your database configuration.")
 
 # ================================================================
 # MAIN
