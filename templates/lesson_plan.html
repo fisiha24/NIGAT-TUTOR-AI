@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson Plan - Nigat Tutor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('about') }}">About Us</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
+        <a href="{{ url_for('register') }}">Register</a>
+        <a href="{{ url_for('upload_file') }}">Upload</a>
+        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
+        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
+    </nav>
+
+    <section class="content-box" style="max-width: 950px; margin: 50px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+        <h1>📚 Lesson Plan Manager</h1>
+        <p>Create and manage all types of lesson plans.</p>
+        
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; margin: 25px 0;">
+            <a href="{{ url_for('annual_plan') }}" style="background: #764ba2; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">📅 Annual Plan</a>
+            <a href="{{ url_for('laboratory_plan') }}" style="background: #27ae60; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">🔬 Laboratory Plan</a>
+            <a href="{{ url_for('daily_plan') }}" style="background: #e67e22; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">📋 Daily Plan</a>
+        </div>
+        
+        <hr>
+        
+        <h2>📋 Annual Plans</h2>
+        {% if annual_plans %}
+            {% for plan in annual_plans %}
+            <div style="background: #f8f9fa; padding: 15px 20px; border-radius: 10px; border-left: 6px solid #764ba2; margin-bottom: 10px;">
+                <strong>{{ plan.subject }}</strong> - Grade {{ plan.grade }} {{ plan.section }}
+                <span style="color: #888; font-size: 0.9em;">({{ plan.year }})</span>
+                <br>
+                <span style="font-size: 0.85em; color: #555;">Unit {{ plan.unit_number }}: {{ plan.unit_title }}</span>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p style="color: #888;">No annual plans yet.</p>
+        {% endif %}
+        
+        <hr>
+        
+        <h2>🔬 Laboratory Plans</h2>
+        {% if laboratory_plans %}
+            {% for plan in laboratory_plans %}
+            <div style="background: #f8f9fa; padding: 15px 20px; border-radius: 10px; border-left: 6px solid #27ae60; margin-bottom: 10px;">
+                <strong>{{ plan.subject }}</strong> - Grade {{ plan.grade }}
+                <span style="color: #888; font-size: 0.9em;">({{ plan.year }})</span>
+                <br>
+                <span style="font-size: 0.85em; color: #555;">Experiments: {{ plan.experiment_data|length if plan.experiment_data else 0 }}</span>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p style="color: #888;">No laboratory plans yet.</p>
+        {% endif %}
+        
+        <hr>
+        
+        <h2>📋 Daily Plans</h2>
+        {% if daily_plans %}
+            {% for plan in daily_plans %}
+            <div style="background: #f8f9fa; padding: 15px 20px; border-radius: 10px; border-left: 6px solid #e67e22; margin-bottom: 10px;">
+                <strong>{{ plan.subject }}</strong> - Grade {{ plan.grade }} {{ plan.section }}
+                <span style="color: #888; font-size: 0.9em;">({{ plan.date.strftime('%b %d, %Y') if plan.date else 'No date' }})</span>
+                <br>
+                <span style="font-size: 0.85em; color: #555;">{{ plan.lesson_topic }}</span>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p style="color: #888;">No daily plans yet.</p>
+        {% endif %}
+
+        <hr>
+
+        <!-- ===== AI CHAT SECTION (Full-width, auto-resize, plus button) ===== -->
+        <div class="chat-box" style="margin-top: 25px;">
+            <h2>🤖 Nigat AI Tutor (Lesson Assistant)</h2>
+            <p class="chat-sub">Ask me to generate a lesson plan or help with any question!</p>
+            
+            <div class="chat-history" id="chat-history">
+                <p class="placeholder">💬 Conversation will appear here... / ውይይቱ እዚህ ይታያል...</p>
+            </div>
+            
+            <div class="chat-input">
+                <textarea id="user-query" placeholder="Ask anything... / ማንኛውንም ጥያቄ ይጠይቁ..." rows="3"></textarea>
+                <div class="chat-actions">
+                    <button onclick="askAI()" class="btn-purple"><i class="fas fa-paper-plane"></i> Send / ላክ</button>
+                    <button onclick="togglePlusMenu()" class="btn-plus" id="plusBtn">+</button>
+                </div>
+                <div class="plus-menu" id="plusMenu">
+                    <div class="plus-menu-item" onclick="newChat()"><i class="fas fa-plus-circle"></i> New Chat / አዲስ ውይይት</div>
+                    <div class="plus-menu-item" onclick="document.getElementById('imageUpload').click()"><i class="fas fa-image"></i> Upload Image / ምስል ላክ</div>
+                    <div class="plus-menu-item" onclick="startVoice()"><i class="fas fa-microphone"></i> Voice Input / ድምጽ አስገባ</div>
+                    <div class="plus-menu-item" onclick="clearContext()"><i class="fas fa-eraser"></i> Clear Context / ማህደር አጽዳ</div>
+                </div>
+                <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="uploadImage(event)">
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // --- Configure marked ---
+        const renderer = new marked.Renderer();
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+            tables: true,
+            sanitize: false,
+            renderer: renderer
+        });
+
+        let chatHistory = [];
+
+        function addMessage(role, text) {
+            const container = document.getElementById('chat-history');
+            if (container.children.length === 1 && container.children[0].classList.contains('placeholder')) {
+                container.innerHTML = '';
+            }
+            const div = document.createElement('div');
+            div.className = 'msg ' + role;
+            if (role === 'ai') {
+                div.innerHTML = '<strong>Nigat AI:</strong><br>' + marked.parse(text);
+            } else {
+                div.innerHTML = '<strong>You:</strong> ' + text;
+            }
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            chatHistory.push({role, text});
+        }
+
+        function askAI() {
+            const input = document.getElementById('user-query');
+            const query = input.value.trim();
+            if (!query) return alert('Please type a question.');
+            addMessage('user', query);
+            input.value = '';
+            input.style.height = 'auto';
+            addMessage('ai', '⏳ Thinking...');
+            
+            fetch('/ask_ai', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query: query})
+            })
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('chat-history');
+                container.removeChild(container.lastChild);
+                chatHistory.pop();
+                addMessage('ai', data.answer || 'No response.');
+            })
+            .catch(() => {
+                const container = document.getElementById('chat-history');
+                container.removeChild(container.lastChild);
+                chatHistory.pop();
+                addMessage('ai', '❌ Error: AI not responding.');
+            });
+        }
+
+        // Auto-resize
+        document.getElementById('user-query').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = this.scrollHeight + 'px';
+        });
+
+        document.getElementById('user-query').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                askAI();
+            }
+        });
+
+        // Plus Menu
+        function togglePlusMenu() {
+            document.getElementById('plusMenu').classList.toggle('show');
+        }
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('plusMenu');
+            const btn = document.getElementById('plusBtn');
+            if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove('show');
+        });
+
+        function newChat() {
+            document.getElementById('chat-history').innerHTML = '<p class="placeholder">💬 Conversation will appear here... / ውይይቱ እዚህ ይታያል...</p>';
+            chatHistory = [];
+            document.getElementById('plusMenu').classList.remove('show');
+        }
+
+        function uploadImage(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('image', file);
+            fetch('/upload_image', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) alert('Error: ' + data.error);
+                else {
+                    addMessage('user', '[Image uploaded: ' + file.name + ']');
+                    addMessage('ai', '✅ Image processed. Extracted text: ' + data.text);
+                }
+            });
+            document.getElementById('plusMenu').classList.remove('show');
+            e.target.value = '';
+        }
+
+        function startVoice() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                return alert('Voice input not supported. Use Chrome.');
+            }
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'am-ET';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.onstart = () => {
+                document.getElementById('plusMenu').classList.remove('show');
+                addMessage('user', '🎤 Listening...');
+            };
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('user-query').value = transcript;
+                askAI();
+            };
+            recognition.onerror = (e) => alert('Voice error: ' + e.error);
+            recognition.start();
+        }
+
+        function clearContext() {
+            if (confirm('Clear all uploaded context?')) {
+                fetch('/clear_context', { method: 'POST' })
+                .then(() => addMessage('ai', '✅ Context cleared.'));
+                document.getElementById('plusMenu').classList.remove('show');
+            }
+        }
+    </script>
+</body>
+</html>

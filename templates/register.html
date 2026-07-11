@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Nigat Tutor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('about') }}">About Us</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
+        <a href="{{ url_for('register') }}">Register</a>
+        <a href="{{ url_for('upload_file') }}">Upload</a>
+        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
+        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
+    </nav>
+
+    <section class="content-box" style="max-width: 600px; margin: 50px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+        <h1>📝 Student Registration</h1>
+        <p style="text-align: center; color: #666;">Create an account to access full course materials.</p>
+        
+        <form method="POST" class="reg-form">
+            <div class="form-group" style="margin-bottom:15px;">
+                <label for="fullname" style="display:block; font-weight:600; margin-bottom:5px;">Full Name</label>
+                <input type="text" id="fullname" name="fullname" placeholder="Enter your full name" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom:15px;">
+                <label for="email" style="display:block; font-weight:600; margin-bottom:5px;">Email</label>
+                <input type="email" id="email" name="email" placeholder="Enter your email" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom:15px;">
+                <label for="phone" style="display:block; font-weight:600; margin-bottom:5px;">Phone Number</label>
+                <input type="tel" id="phone" name="phone" placeholder="Enter your phone number" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom:15px;">
+                <label for="grade" style="display:block; font-weight:600; margin-bottom:5px;">Grade</label>
+                <input type="number" id="grade" name="grade" placeholder="Enter your grade" min="1" max="12" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom:15px;">
+                <label for="address" style="display:block; font-weight:600; margin-bottom:5px;">Address</label>
+                <input type="text" id="address" name="address" placeholder="Enter your address" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom:15px;">
+                <label for="subject" style="display:block; font-weight:600; margin-bottom:5px;">Subject</label>
+                <select id="subject" name="subject" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px;">
+                    <option value="math">Mathematics</option>
+                    <option value="english">English</option>
+                    <option value="physics">Physics</option>
+                    <option value="biology">Biology</option>
+                    <option value="chemistry">Chemistry</option>
+                    <option value="general_science">General Science</option>
+                </select>
+            </div>
+            
+            <button type="submit" style="width:100%; background:#764ba2; color:white; padding:12px 30px; border:none; border-radius:30px; cursor:pointer; font-size:16px;">✅ Submit Registration</button>
+        </form>
+        
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <p style="color:green; margin-top:15px; text-align:center;">{{ messages[0] }}</p>
+            {% endif %}
+        {% endwith %}
+    </section>
+</body>
+</html>

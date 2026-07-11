@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratory Plan - Nigat Tutor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('about') }}">About Us</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
+        <a href="{{ url_for('register') }}">Register</a>
+        <a href="{{ url_for('upload_file') }}">Upload</a>
+        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
+        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
+    </nav>
+
+    <section class="content-box" style="max-width: 900px; margin: 50px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+        <h1>🔬 Laboratory Plan</h1>
+        <p>Create a complete laboratory experiment plan.</p>
+        
+        <form method="POST" class="reg-form" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <fieldset style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; grid-column: span 2;">
+                <legend style="font-weight: bold; color: #764ba2;">Basic Information</legend>
+                <input type="text" name="school_name" placeholder="School Name / የትምህርት ቤት ስም" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="text" name="teacher_name" placeholder="Teacher Name / የመምህር ስም" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="text" name="subject" placeholder="Subject / ትምህርት" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="number" name="grade" placeholder="Grade / ክፍል" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="number" name="year" placeholder="Year / ዓመት" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+            </fieldset>
+            
+            <fieldset style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; grid-column: span 2;">
+                <legend style="font-weight: bold; color: #764ba2;">Experiments</legend>
+                <div id="experiment-entries">
+                    <div class="experiment-entry" style="background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <input type="text" name="exp_number[]" placeholder="Experiment No." required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <input type="text" name="exp_title[]" placeholder="Title / ርዕስ" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <input type="text" name="apparatus[]" placeholder="Apparatus / መሳሪያዎች" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <input type="text" name="chemicals[]" placeholder="Chemicals / ኬሚካሎች" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <input type="number" name="unit_number[]" placeholder="Unit No." required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <input type="text" name="page[]" placeholder="Page / ገጽ" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <input type="text" name="month[]" placeholder="Month / ወር" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <input type="date" name="date[]" placeholder="Date / ቀን" style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                        <button type="button" onclick="this.parentElement.remove()" style="background: #e74c3c; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; grid-column: span 2;">🗑️ Remove</button>
+                    </div>
+                </div>
+                <button type="button" onclick="addExperimentEntry()" style="background: #764ba2; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;"><i class="fas fa-plus"></i> Add Experiment</button>
+            </fieldset>
+            
+            <button type="submit" style="grid-column: span 2; background:#764ba2; color:white; padding:12px 30px; border:none; border-radius:30px; cursor:pointer; font-size:16px;"><i class="fas fa-save"></i> Create Laboratory Plan</button>
+        </form>
+    </section>
+
+    <script>
+        function addExperimentEntry() {
+            const container = document.getElementById('experiment-entries');
+            const entry = document.createElement('div');
+            entry.className = 'experiment-entry';
+            entry.style.cssText = 'background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;';
+            entry.innerHTML = `
+                <input type="text" name="exp_number[]" placeholder="Experiment No." required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <input type="text" name="exp_title[]" placeholder="Title / ርዕስ" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <input type="text" name="apparatus[]" placeholder="Apparatus / መሳሪያዎች" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <input type="text" name="chemicals[]" placeholder="Chemicals / ኬሚካሎች" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <input type="number" name="unit_number[]" placeholder="Unit No." required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <input type="text" name="page[]" placeholder="Page / ገጽ" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <input type="text" name="month[]" placeholder="Month / ወር" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <input type="date" name="date[]" placeholder="Date / ቀን" style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                <button type="button" onclick="this.parentElement.remove()" style="background: #e74c3c; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; grid-column: span 2;">🗑️ Remove</button>
+            `;
+            container.appendChild(entry);
+        }
+    </script>
+</body>
+</html>

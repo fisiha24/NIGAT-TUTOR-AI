@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Plan - Nigat Tutor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('about') }}">About Us</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
+        <a href="{{ url_for('register') }}">Register</a>
+        <a href="{{ url_for('upload_file') }}">Upload</a>
+        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
+        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
+    </nav>
+
+    <section class="content-box" style="max-width: 1000px; margin: 50px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+        <h1>📋 Daily Lesson Plan</h1>
+        <p>Create a detailed daily lesson plan with all components.</p>
+        
+        <form method="POST" class="reg-form" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <!-- Basic Information -->
+            <fieldset style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; grid-column: span 2;">
+                <legend style="font-weight: bold; color: #764ba2;">Basic Information</legend>
+                <input type="text" name="teacher_name" placeholder="Teacher Name / የመምህር ስም" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="text" name="school_name" placeholder="School Name / የትምህርት ቤት ስም" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="number" name="grade" placeholder="Grade / ክፍል" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="text" name="section" placeholder="Section / ክፍለ ጊዜ (e.g., A)" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="text" name="subject" placeholder="Subject / ትምህርት" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="date" name="date" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="number" name="unit_number" placeholder="Unit Number / የክፍል ቁጥር" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="text" name="lesson_topic" placeholder="Lesson Topic / የትምህርት ርዕስ" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+                <input type="text" name="page" placeholder="Page / ገጽ" required style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;">
+            </fieldset>
+            
+            <!-- Rationale and Prerequisites -->
+            <fieldset style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; grid-column: span 2;">
+                <legend style="font-weight: bold; color: #764ba2;">Rationale & Prerequisites</legend>
+                <textarea name="rationale" placeholder="Rationale / ምክንያት" rows="2" style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;"></textarea>
+                <textarea name="prerequisites" placeholder="Pre-requisite Knowledge / ቅድመ እውቀት" rows="2" style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;"></textarea>
+                <textarea name="competencies" placeholder="Learning Objectives / የመማር ዓላማዎች (list with - )" rows="3" style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;"></textarea>
+            </fieldset>
+            
+            <!-- Lesson Stages -->
+            <fieldset style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; grid-column: span 2;">
+                <legend style="font-weight: bold; color: #764ba2;">Lesson Stages</legend>
+                
+                <!-- Starter -->
+                <div style="background: #f0f4ff; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <h4 style="margin: 0 0 8px 0; grid-column: span 2;">Starter / Introduction</h4>
+                    <input type="number" name="starter_time" placeholder="Time / ጊዜ (minutes)" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <textarea name="starter_teacher" placeholder="Teacher Activities / የመምህር እንቅስቃሴ" rows="2" style="padding:8px; border:1px solid #ddd; border-radius:6px;"></textarea>
+                    <textarea name="starter_student" placeholder="Student Activities / የተማሪ እንቅስቃሴ" rows="2" style="padding:8px; border:1px solid #ddd; border-radius:6px;"></textarea>
+                    <input type="text" name="starter_method" placeholder="Methodology / ዘዴ" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <input type="text" name="starter_assessment" placeholder="Assessment / ምዘና" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <input type="text" name="starter_aids" placeholder="Teaching Aids / መሳሪያዎች" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                </div>
+                
+                <!-- Main Activities -->
+                <div style="background: #f0f4ff; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <h4 style="margin: 0 0 8px 0; grid-column: span 2;">Main Activities</h4>
+                    <input type="number" name="main_time" placeholder="Time / ጊዜ (minutes)" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <textarea name="main_teacher" placeholder="Teacher Activities / የመምህር እንቅስቃሴ" rows="2" style="padding:8px; border:1px solid #ddd; border-radius:6px;"></textarea>
+                    <textarea name="main_student" placeholder="Student Activities / የተማሪ እንቅስቃሴ" rows="2" style="padding:8px; border:1px solid #ddd; border-radius:6px;"></textarea>
+                    <input type="text" name="main_method" placeholder="Methodology / ዘዴ" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <input type="text" name="main_assessment" placeholder="Assessment / ምዘና" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <input type="text" name="main_aids" placeholder="Teaching Aids / መሳሪያዎች" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                </div>
+                
+                <!-- Concluding Activities -->
+                <div style="background: #f0f4ff; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <h4 style="margin: 0 0 8px 0; grid-column: span 2;">Concluding Activities</h4>
+                    <input type="number" name="conclude_time" placeholder="Time / ጊዜ (minutes)" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <textarea name="conclude_teacher" placeholder="Teacher Activities / የመምህር እንቅስቃሴ" rows="2" style="padding:8px; border:1px solid #ddd; border-radius:6px;"></textarea>
+                    <textarea name="conclude_student" placeholder="Student Activities / የተማሪ እንቅስቃሴ" rows="2" style="padding:8px; border:1px solid #ddd; border-radius:6px;"></textarea>
+                    <input type="text" name="conclude_method" placeholder="Methodology / ዘዴ" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <input type="text" name="conclude_assessment" placeholder="Assessment / ምዘና" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                    <input type="text" name="conclude_aids" placeholder="Teaching Aids / መሳሪያዎች" required style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+                </div>
+            </fieldset>
+            
+            <!-- Support for Special Needs -->
+            <fieldset style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; grid-column: span 2;">
+                <legend style="font-weight: bold; color: #764ba2;">Support for Learners with Special Needs</legend>
+                <textarea name="slow_learners" placeholder="Slow Learners / ዘገምተኛ ተማሪዎች" rows="2" style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;"></textarea>
+                <textarea name="medium_learners" placeholder="Medium Learners / መካከለኛ ተማሪዎች" rows="2" style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;"></textarea>
+                <textarea name="fast_learners" placeholder="Fast Learners / ፈጣን ተማሪዎች" rows="2" style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;"></textarea>
+            </fieldset>
+            
+            <!-- Teacher's Self Assessment -->
+            <fieldset style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; grid-column: span 2;">
+                <legend style="font-weight: bold; color: #764ba2;">Teacher's Self Assessment</legend>
+                <textarea name="self_assessment" placeholder="Post-lesson self assessment / ከትምህርት በኋላ ራስን መገምገም" rows="3" style="width:100%; padding:10px; margin:5px 0; border:1px solid #ddd; border-radius:8px;"></textarea>
+            </fieldset>
+            
+            <button type="submit" style="grid-column: span 2; background:#764ba2; color:white; padding:12px 30px; border:none; border-radius:30px; cursor:pointer; font-size:16px;"><i class="fas fa-save"></i> Create Daily Plan</button>
+        </form>
+    </section>
+</body>
+</html>

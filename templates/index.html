@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- ============================================================
+    SEO META TAGS - ENHANCED
+    ============================================================ -->
+    <title>Nigat Tutor AI - ንጋት አስተማሪ AI - Free AI Tutor for Ethiopian Students</title>
+    <meta name="description" content="Nigat Tutor AI - Free AI Tutor for Ethiopian students. Learn with AI in Amharic and English. ንጋት አስተማሪ AI - ለኢትዮጵያ ተማሪዎች ነጻ የAI አስተማሪ።">
+    <meta name="keywords" content="Nigat Tutor AI, AI Tutor, Ethiopia, Amharic, Free, ንጋት አስተማሪ AI, አማርኛ, ነጻ, Ethiopian Education, Online Tutor, Lesson Plan, የትምህርት እቅድ">
+    <meta name="author" content="Teacher Fisaha Melke">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://nigat-tutor-ai.onrender.com/">
+    
+    <!-- Open Graph (ለማህበራዊ ሚዲያ) -->
+    <meta property="og:title" content="Nigat Tutor AI - ንጋት አስተማሪ AI">
+    <meta property="og:description" content="Free AI Tutor for Ethiopian students. ለኢትዮጵያ ተማሪዎች ነጻ የAI አስተማሪ።">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://nigat-tutor-ai.onrender.com/">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Nigat Tutor AI - ንጋት አስተማሪ AI">
+    <meta name="twitter:description" content="Free AI Tutor for Ethiopian students. ለኢትዮጵያ ተማሪዎች ነጻ የAI አስተማሪ።">
+    
+    <!-- ============================================================
+    SCRIPTS & STYLES
+    ============================================================ -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('about') }}">About Us</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
+        <a href="{{ url_for('register') }}">Register</a>
+        <a href="{{ url_for('upload_file') }}">Upload</a>
+        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
+        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
+    </nav>
+
+    <section class="main-container">
+        <div class="chat-box">
+            <h2>Nigat Tutor AI</h2>
+            <p class="chat-sub">Ask me anything. / ማንኛውንም ጥያቄ ይጠይቁኝ።</p>
+
+            <div class="chat-history" id="chat-history">
+                <p class="placeholder">Start a conversation... / ውይይት ይጀምሩ...</p>
+            </div>
+
+            <div class="chat-input">
+                <textarea id="user-query" placeholder="Ask anything..." rows="1"></textarea>
+                <div class="chat-actions">
+                    <button onclick="startVoice()" class="btn-microphone" title="Voice Input / ድምጽ አስገባ"><i class="fas fa-microphone"></i></button>
+                    <button onclick="togglePlusMenu()" class="btn-plus" id="plusBtn">+</button>
+                    <button onclick="askAI()" class="btn-purple"><i class="fas fa-paper-plane"></i> Send</button>
+                </div>
+                <div class="plus-menu" id="plusMenu">
+                    <div class="plus-menu-item" onclick="newChat()">
+                        <i class="fas fa-plus-circle"></i> New Chat / አዲስ ውይይት
+                    </div>
+                    <div class="plus-menu-item" onclick="document.getElementById('pdfUpload').click()">
+                        <i class="fas fa-file-pdf"></i> Upload PDF / ፒዲኤፍ ላክ
+                    </div>
+                    <div class="plus-menu-item" onclick="document.getElementById('imageUpload').click()">
+                        <i class="fas fa-image"></i> Upload Image / ምስል ላክ
+                    </div>
+                    <div class="plus-menu-item" onclick="startVoice()">
+                        <i class="fas fa-microphone"></i> Voice Input / ድምጽ አስገባ
+                    </div>
+                    <div class="plus-menu-item" onclick="clearContext()">
+                        <i class="fas fa-eraser"></i> Clear Context / ማህደር አጽዳ
+                    </div>
+                </div>
+                <input type="file" id="pdfUpload" accept=".pdf" style="display:none" onchange="uploadPDF(event)">
+                <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="uploadImage(event)">
+            </div>
+        </div>
+    </section>
+
+    <section class="courses-section">
+        <h2>Our Courses</h2>
+        <div class="courses-grid">
+            {% for course in courses %}
+            <a href="{{ url_for('course_detail', course_id=course.id) }}" class="course-link">
+                <div class="course-item" style="border-top: 3px solid {{ course.color }};">
+                    <h3>{{ course.name }}</h3>
+                    <p>{{ course.description }}</p>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+
+    <script>
+        // ============================================================
+        // CONFIGURE MARKED - FIXED FOR TABLES
+        // ============================================================
+        marked.use({
+            gfm: true,
+            breaks: true
+        });
+
+        const renderer = {
+            table: function(header, body) {
+                return '<div class="table-wrapper"><table class="markdown-table">\n' + header + '\n' + body + '\n</table></div>';
+            },
+            tablerow: function(content) {
+                return '<tr>\n' + content + '\n</tr>';
+            },
+            tablecell: function(content, flags) {
+                const type = flags.header ? 'th' : 'td';
+                return '<' + type + '>' + content + '</' + type + '>\n';
+            }
+        };
+
+        marked.use({ renderer: renderer });
+
+        // ============================================================
+        // CHAT LOGIC
+        // ============================================================
+        let chatHistory = [];
+        let currentAIResponse = '';
+        let isStreaming = false;
+        let streamInterval = null;
+
+        function addMessage(role, text, isStream = false) {
+            const container = document.getElementById('chat-history');
+            if (container.children.length === 1 && container.children[0].classList.contains('placeholder')) {
+                container.innerHTML = '';
+            }
+
+            const div = document.createElement('div');
+            div.className = 'msg ' + role;
+
+            if (role === 'ai') {
+                if (isStream) {
+                    div.innerHTML = '';
+                    div.dataset.fullText = text;
+                    container.appendChild(div);
+                    container.scrollTop = container.scrollHeight;
+                    startStreaming(div);
+                    return;
+                } else {
+                    try {
+                        const htmlContent = marked.parse(text);
+                        div.innerHTML = htmlContent;
+                    } catch (e) {
+                        console.error('❌ Markdown error:', e);
+                        div.textContent = text;
+                    }
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'btn-download';
+                    downloadBtn.innerHTML = '<i class="fas fa-file-word"></i> Download';
+                    downloadBtn.onclick = function() { downloadWord(text); };
+                    div.appendChild(downloadBtn);
+                }
+            } else {
+                div.textContent = text;
+            }
+
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            chatHistory.push({ role, text });
+        }
+
+        function startStreaming(div) {
+            const fullText = div.dataset.fullText;
+            let index = 0;
+            const chunkSize = 5;
+            if (streamInterval) clearInterval(streamInterval);
+            streamInterval = setInterval(() => {
+                if (index < fullText.length) {
+                    div.innerHTML += fullText.substring(index, index + chunkSize);
+                    index += chunkSize;
+                    div.scrollTop = div.scrollHeight;
+                    document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
+                } else {
+                    clearInterval(streamInterval);
+                    streamInterval = null;
+                    isStreaming = false;
+                    try {
+                        const fullHtml = marked.parse(fullText);
+                        div.innerHTML = fullHtml;
+                    } catch (e) {
+                        div.textContent = fullText;
+                    }
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'btn-download';
+                    downloadBtn.innerHTML = '<i class="fas fa-file-word"></i> Download';
+                    downloadBtn.onclick = function() { downloadWord(fullText); };
+                    div.appendChild(downloadBtn);
+                    currentAIResponse = fullText;
+                }
+            }, 25);
+        }
+
+        function askAI() {
+            const input = document.getElementById('user-query');
+            const query = input.value.trim();
+            if (!query) return;
+            if (streamInterval) {
+                clearInterval(streamInterval);
+                streamInterval = null;
+                isStreaming = false;
+            }
+            addMessage('user', query);
+            input.value = '';
+            input.style.height = 'auto';
+            const container = document.getElementById('chat-history');
+            const placeholderDiv = document.createElement('div');
+            placeholderDiv.className = 'msg ai';
+            placeholderDiv.textContent = '⏳ Thinking...';
+            container.appendChild(placeholderDiv);
+            container.scrollTop = container.scrollHeight;
+            fetch('/ask_ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query })
+            })
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                container.removeChild(placeholderDiv);
+                addMessage('ai', data.answer || 'No response.', true);
+            })
+            .catch(err => {
+                container.removeChild(placeholderDiv);
+                addMessage('ai', '❌ Error: ' + err.message);
+            });
+        }
+
+        function downloadWord(content) {
+            fetch('/download_word', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: content, filename: 'Nigat_AI_Response' })
+            })
+            .then(res => res.blob())
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Nigat_AI_Response.docx';
+                a.click();
+                window.URL.revokeObjectURL(url);
+            })
+            .catch(err => alert('Download failed: ' + err.message));
+        }
+
+        document.getElementById('user-query').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+        });
+
+        document.getElementById('user-query').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!isStreaming) askAI();
+            }
+        });
+
+        function togglePlusMenu() {
+            document.getElementById('plusMenu').classList.toggle('show');
+        }
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('plusMenu');
+            const btn = document.getElementById('plusBtn');
+            if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove('show');
+        });
+
+        function newChat() {
+            if (streamInterval) {
+                clearInterval(streamInterval);
+                streamInterval = null;
+                isStreaming = false;
+            }
+            document.getElementById('chat-history').innerHTML = '<p class="placeholder">Start a conversation... / ውይይት ይጀምሩ...</p>';
+            chatHistory = [];
+            document.getElementById('plusMenu').classList.remove('show');
+        }
+
+        function uploadPDF(e) {
+            const file = e.target.files[0];
+            if (!file) {
+                alert('No file selected.');
+                return;
+            }
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                alert('Please select a PDF file.');
+                e.target.value = '';
+                return;
+            }
+            
+            if (file.size > 20 * 1024 * 1024) {
+                alert('⚠️ Large PDF detected (>20MB). The content will be summarized for better results.');
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            addMessage('user', '[Uploading PDF: ' + file.name + ']');
+            addMessage('ai', '⏳ Uploading and processing PDF... (Large files may be summarized)');
+            fetch('/upload', { method: 'POST', body: formData })
+            .then(response => {
+                if (response.redirected) {
+                    window.location.reload();
+                    return;
+                }
+                if (!response.ok) throw new Error('Upload failed');
+                return response.text();
+            })
+            .then(() => {
+                const container = document.getElementById('chat-history');
+                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
+                    container.removeChild(container.lastChild);
+                    chatHistory.pop();
+                }
+                addMessage('ai', '✅ PDF uploaded successfully! The content has been summarized. You can now ask questions about it.');
+            })
+            .catch(err => {
+                const container = document.getElementById('chat-history');
+                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
+                    container.removeChild(container.lastChild);
+                    chatHistory.pop();
+                }
+                addMessage('ai', '❌ PDF upload failed: ' + err.message);
+            });
+            document.getElementById('plusMenu').classList.remove('show');
+            e.target.value = '';
+        }
+
+        function uploadImage(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('image', file);
+            addMessage('user', '[Uploading Image: ' + file.name + ']');
+            addMessage('ai', '⏳ Processing image...');
+            fetch('/upload_image', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('chat-history');
+                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
+                    container.removeChild(container.lastChild);
+                    chatHistory.pop();
+                }
+                addMessage('ai', data.error ? '❌ ' + data.error : '✅ Image uploaded successfully!');
+            })
+            .catch(err => {
+                const container = document.getElementById('chat-history');
+                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
+                    container.removeChild(container.lastChild);
+                    chatHistory.pop();
+                }
+                addMessage('ai', '❌ Image upload failed: ' + err.message);
+            });
+            document.getElementById('plusMenu').classList.remove('show');
+            e.target.value = '';
+        }
+
+        function startVoice() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert('Voice input not supported. Use Chrome, Edge, or Safari.');
+                return;
+            }
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'am-ET';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.onstart = function() {
+                document.getElementById('plusMenu').classList.remove('show');
+                const input = document.getElementById('user-query');
+                input.placeholder = '🎤 Listening...';
+            };
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('user-query').value = transcript;
+                document.getElementById('user-query').placeholder = 'Ask anything...';
+                setTimeout(() => {
+                    if (!isStreaming) askAI();
+                }, 300);
+            };
+            recognition.onerror = function(e) {
+                document.getElementById('user-query').placeholder = 'Ask anything...';
+                if (e.error !== 'not-allowed') {
+                    alert('Voice error: ' + e.error + '. Please try again.');
+                }
+            };
+            recognition.onend = function() {
+                document.getElementById('user-query').placeholder = 'Ask anything...';
+            };
+            recognition.start();
+        }
+
+        function clearContext() {
+            if (confirm('Clear all uploaded context?')) {
+                fetch('/clear_context', { method: 'POST' })
+                .then(() => addMessage('ai', '✅ Context cleared.'));
+                document.getElementById('plusMenu').classList.remove('show');
+            }
+        }
+    </script>
+</body>
+</html>
