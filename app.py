@@ -33,7 +33,7 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# DATABASE INITIALIZATION - ከሞዴሎቹ በፊት ✅
+# DATABASE INITIALIZATION - MUST BE BEFORE MODELS ✅
 # ================================================================
 db = SQLAlchemy(app)
 
@@ -252,8 +252,8 @@ def extract_pdf_text_streaming(filepath):
         
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
-            # Process only first 50 pages to save memory
-            max_pages = min(total_pages, 50)
+            # Process only first 30 pages to save memory
+            max_pages = min(total_pages, 30)
             
             for i in range(max_pages):
                 page = pdf.pages[i]
@@ -317,9 +317,9 @@ class EnterpriseRAG:
         self.doc_metadata = {}
         self.chunk_texts = {}
         self.faiss_indexes = {}
-        self.chunk_size = 300      # ቀንሷል
-        self.overlap = 50          # ቀንሷል
-        self.max_chunks = 500      # ከፍተኛ የክፍል ብዛት
+        self.chunk_size = 250      # ቀንሷል
+        self.overlap = 30          # ቀንሷል
+        self.max_chunks = 300      # ከፍተኛ የክፍል ብዛት
     
     def get_index_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}.faiss")
@@ -336,7 +336,7 @@ class EnterpriseRAG:
                 break
             end = min(start + self.chunk_size, total_words)
             chunk_words = words[start:end]
-            if len(chunk_words) < 15:
+            if len(chunk_words) < 10:
                 continue
             chunk_count += 1
             yield ' '.join(chunk_words)
@@ -368,8 +368,8 @@ class EnterpriseRAG:
             embeddings.append(emb)
             chunk_count += 1
             
-            # Add to FAISS in smaller batches (50 instead of 100)
-            if faiss_index is not None and len(embeddings) >= 50:
+            # Add to FAISS in smaller batches (30 instead of 50)
+            if faiss_index is not None and len(embeddings) >= 30:
                 if embeddings:
                     emb_array = np.array(embeddings).astype('float32')
                     faiss_index.add(emb_array)
@@ -445,7 +445,7 @@ class EnterpriseRAG:
                 query_emb = get_embedding(query)
                 query_emb = np.array([query_emb]).astype('float32')
                 
-                k = min(20, len(chunks))
+                k = min(15, len(chunks))
                 scores, indices = faiss_index.search(query_emb, k)
                 
                 selected = []
@@ -458,7 +458,7 @@ class EnterpriseRAG:
                     if total_tokens + estimated <= max_tokens:
                         selected.append(chunk)
                         total_tokens += estimated
-                    if len(selected) >= 5:  # Limit to 5 chunks max
+                    if len(selected) >= 4:  # Limit to 4 chunks max
                         break
                 return selected if selected else [chunks[0]]
             except:
@@ -467,7 +467,7 @@ class EnterpriseRAG:
         # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
-        for i, chunk in enumerate(chunks[:100]):  # Only check first 100 chunks
+        for i, chunk in enumerate(chunks[:80]):  # Only check first 80 chunks
             chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
             overlap = len(query_words & chunk_words)
             if overlap > 0:
