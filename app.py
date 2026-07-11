@@ -27,10 +27,35 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# GROQ API
+# GROQ API - MULTIPLE KEYS (ROUND ROBIN)
 # ================================================================
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY', "")
-client = Groq(api_key=GROQ_API_KEY)
+# ሁሉንም የGROQ API ቁልፎች ከአካባቢ ተለዋዋጮች ያንብቡ
+GROQ_API_KEYS = []
+for i in range(1, 6):  # KEY_1 እስከ KEY_5
+    key = os.environ.get(f'GROQ_API_KEY_{i}', '')
+    if key:
+        GROQ_API_KEYS.append(key)
+
+# ዋናውን GROQ_API_KEY እንዲሁም ያክሉ
+main_key = os.environ.get('GROQ_API_KEY', '')
+if main_key and main_key not in GROQ_API_KEYS:
+    GROQ_API_KEYS.append(main_key)
+
+# ቢያንስ አንድ ቁልፍ ካለ
+current_key_index = 0
+
+def get_groq_client():
+    """Round-robin በመጠቀም የሚቀጥለውን Groq ደንበኛ ይመልሳል"""
+    global current_key_index
+    if not GROQ_API_KEYS:
+        return None
+    
+    key = GROQ_API_KEYS[current_key_index % len(GROQ_API_KEYS)]
+    current_key_index += 1
+    print(f"🔑 Using Groq API Key #{current_key_index % len(GROQ_API_KEYS)}")
+    return Groq(api_key=key)
+
+print(f"✅ Loaded {len(GROQ_API_KEYS)} Groq API keys")
 
 db = SQLAlchemy(app)
 
@@ -52,7 +77,7 @@ def detect_language(text):
         return 'amharic'
     return 'english'
 
-def summarize_for_context(text, max_chars=10000):
+def summarize_for_context(text, max_chars=8000):
     if len(text) <= max_chars:
         return text
     first_part = text[:int(max_chars * 0.7)]
@@ -289,7 +314,7 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES
+# UPLOAD ROUTES (የተሻሻለ)
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -309,12 +334,13 @@ def upload_file():
             file_size = os.path.getsize(filepath) / (1024 * 1024)
             text = extract_pdf_text(filepath)
             
+            # ትልቅ ጽሑፍ ለማስተናገድ ገደብ ጨምሯል
             if file_size > 50:
-                max_chars = 10000
+                max_chars = 6000
             elif file_size > 20:
-                max_chars = 8000
+                max_chars = 5000
             else:
-                max_chars = 10000
+                max_chars = 8000
             
             truncated_text = summarize_for_context(text, max_chars=max_chars)
             
@@ -367,7 +393,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE
+# AI CHAT ROUTE (የተሻሻለ)
 # ================================================================
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
@@ -385,16 +411,16 @@ def ask_ai():
     # 1. From session
     pdf_text = session.get('pdf_context', '')
     if pdf_text:
-        if len(pdf_text) > 10000:
-            pdf_text = pdf_text[:10000] + "... [truncated]"
+        if len(pdf_text) > 7000:
+            pdf_text = pdf_text[:7000] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print(f"📄 Using PDF from session: {session.get('pdf_filename', 'unknown')}")
     
     # 2. From uploaded_texts
     elif uploaded_texts['pdf']:
         pdf_text = "\n".join(uploaded_texts['pdf'][-2:])
-        if len(pdf_text) > 10000:
-            pdf_text = pdf_text[:10000] + "... [truncated]"
+        if len(pdf_text) > 7000:
+            pdf_text = pdf_text[:7000] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print("📄 Using PDF from uploaded_texts")
     
@@ -579,10 +605,14 @@ def ask_ai():
     return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
 
 # ================================================================
-# AI RESPONSE FUNCTION (GROQ)
+# AI RESPONSE FUNCTION (GROQ - በርካታ Keys)
 # ================================================================
 def get_ai_response(system_prompt, user_query):
-    """Get response from Groq API"""
+    """Get response from Groq API using multiple keys (round-robin)"""
+    
+    client = get_groq_client()
+    if client is None:
+        return "⚠️ No Groq API keys available. Please add at least one API key."
     
     try:
         print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
@@ -594,7 +624,7 @@ def get_ai_response(system_prompt, user_query):
             ],
             model="llama-3.3-70b-versatile",
             temperature=0.05,
-            max_tokens=4096,
+            max_tokens=2048,
             top_p=0.85,
         )
         
