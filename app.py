@@ -21,7 +21,7 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
 app.config['SECRET_KEY'] = 'mysecretkey'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # FAISS storage directory
@@ -38,7 +38,7 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 db = SQLAlchemy(app)
 
 # ================================================================
-# OPENROUTER CONFIGURATION - 100% FREE MODELS
+# OPENROUTER CONFIGURATION
 # ================================================================
 
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
@@ -70,20 +70,15 @@ def get_ai_response(system_prompt, user_query, context_chunks):
     if not OPENROUTER_API_KEY:
         return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
     
-    # Build context from chunks
     context_text = "\n\n---\n\n".join(context_chunks) if context_chunks else "No context available."
-    
-    # Detect prompt type
     prompt_type = detect_prompt_type(user_query)
     prompt_template = get_prompt_template(prompt_type)
     
-    # Language instruction
     if detect_language(user_query) == 'amharic':
         lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
         lang_instruction = "You MUST respond in English."
     
-    # Build full prompt
     full_prompt = (
         f"{system_prompt}\n\n"
         f"=== LANGUAGE ===\n{lang_instruction}\n\n"
@@ -95,7 +90,6 @@ def get_ai_response(system_prompt, user_query, context_chunks):
     estimated_tokens = len(full_prompt) // 4
     print(f"📊 Estimated tokens: {estimated_tokens}")
     
-    # Try models with fallback
     max_attempts = len(FREE_MODELS) * 2
     for attempt in range(max_attempts):
         model = get_next_model()
@@ -218,34 +212,6 @@ If the context doesn't contain the answer, say so clearly.
     return templates.get(prompt_type, templates['general'])
 
 # ================================================================
-# TOKEN MANAGER
-# ================================================================
-
-class TokenManager:
-    MAX_TOKENS = 5000
-    
-    @staticmethod
-    def estimate_tokens(text):
-        return len(text) // 4
-    
-    @staticmethod
-    def build_context(chunks, max_tokens=MAX_TOKENS):
-        if not chunks:
-            return "", 0
-        
-        context_parts = []
-        total_tokens = 0
-        
-        for i, chunk in enumerate(chunks):
-            chunk_tokens = TokenManager.estimate_tokens(chunk)
-            if total_tokens + chunk_tokens > max_tokens - 500:
-                break
-            context_parts.append(f"--- Source {i+1} ---\n{chunk}")
-            total_tokens += chunk_tokens
-        
-        return "\n\n".join(context_parts), len(context_parts)
-
-# ================================================================
 # HELPER FUNCTIONS
 # ================================================================
 
@@ -273,7 +239,12 @@ def remove_duplicate_sentences(text):
             unique.append(s)
     return ' '.join(unique)
 
+# ================================================================
+# MEMORY OPTIMIZED PDF EXTRACTION
+# ================================================================
+
 def extract_pdf_text_streaming(filepath):
+    """Extract PDF text page by page with memory optimization"""
     try:
         import pdfplumber
         text_parts = []
@@ -281,15 +252,23 @@ def extract_pdf_text_streaming(filepath):
         
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
-            for i, page in enumerate(pdf.pages):
+            # Process only first 50 pages to save memory
+            max_pages = min(total_pages, 50)
+            
+            for i in range(max_pages):
+                page = pdf.pages[i]
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
+                # Free page memory
+                page = None
                 if (i + 1) % 10 == 0:
-                    print(f"📄 Extracted page {i+1}/{total_pages}")
+                    print(f"📄 Extracted page {i+1}/{max_pages}")
         
         full_text = "\n\n".join(text_parts)
-        return full_text, total_pages if full_text else "No text found in PDF.", 0
+        # Free text_parts memory
+        text_parts = None
+        return full_text, max_pages if full_text else "No text found in PDF.", 0
     except Exception as e:
         return f"PDF extraction error: {str(e)}", 0
 
@@ -330,7 +309,7 @@ def get_embedding(text):
         return np.zeros(384)
 
 # ================================================================
-# RAG SYSTEM
+# MEMORY OPTIMIZED RAG SYSTEM
 # ================================================================
 
 class EnterpriseRAG:
@@ -338,8 +317,9 @@ class EnterpriseRAG:
         self.doc_metadata = {}
         self.chunk_texts = {}
         self.faiss_indexes = {}
-        self.chunk_size = 500
-        self.overlap = 100
+        self.chunk_size = 300  # ቀንሷል
+        self.overlap = 50      # ቀንሷል
+        self.max_chunks = 500  # ከፍተኛ የክፍል ብዛት
     
     def get_index_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}.faiss")
@@ -350,11 +330,15 @@ class EnterpriseRAG:
     def _chunk_text_streaming(self, text):
         words = text.split()
         total_words = len(words)
+        chunk_count = 0
         for start in range(0, total_words, self.chunk_size - self.overlap):
+            if chunk_count >= self.max_chunks:
+                break
             end = min(start + self.chunk_size, total_words)
             chunk_words = words[start:end]
-            if len(chunk_words) < 20:
+            if len(chunk_words) < 15:
                 continue
+            chunk_count += 1
             yield ' '.join(chunk_words)
             if end >= total_words:
                 break
@@ -376,21 +360,29 @@ class EnterpriseRAG:
         
         chunks = []
         embeddings = []
+        chunk_count = 0
         
         for chunk_text in self._chunk_text_streaming(text):
             chunks.append(chunk_text)
             emb = get_embedding(chunk_text)
             embeddings.append(emb)
+            chunk_count += 1
             
-            if faiss_index is not None and len(embeddings) >= 100:
+            # Add to FAISS in smaller batches (50 instead of 100)
+            if faiss_index is not None and len(embeddings) >= 50:
                 if embeddings:
                     emb_array = np.array(embeddings).astype('float32')
                     faiss_index.add(emb_array)
                     embeddings = []
+                    # Force garbage collection
+                    import gc
+                    gc.collect()
         
+        # Add remaining embeddings
         if embeddings and faiss_index is not None:
             emb_array = np.array(embeddings).astype('float32')
             faiss_index.add(emb_array)
+            embeddings = None
         
         self.chunk_texts[session_id] = chunks
         self.doc_metadata[session_id]['chunk_count'] = len(chunks)
@@ -437,7 +429,7 @@ class EnterpriseRAG:
                 pass
         return None
     
-    def get_relevant_chunks(self, session_id, query, max_tokens=5000):
+    def get_relevant_chunks(self, session_id, query, max_tokens=4000):
         if session_id not in self.chunk_texts:
             self._load_metadata(session_id)
         
@@ -453,7 +445,7 @@ class EnterpriseRAG:
                 query_emb = get_embedding(query)
                 query_emb = np.array([query_emb]).astype('float32')
                 
-                k = min(50, len(chunks))
+                k = min(20, len(chunks))
                 scores, indices = faiss_index.search(query_emb, k)
                 
                 selected = []
@@ -466,6 +458,8 @@ class EnterpriseRAG:
                     if total_tokens + estimated <= max_tokens:
                         selected.append(chunk)
                         total_tokens += estimated
+                    if len(selected) >= 5:  # Limit to 5 chunks max
+                        break
                 return selected if selected else [chunks[0]]
             except:
                 pass
@@ -473,7 +467,7 @@ class EnterpriseRAG:
         # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
-        for i, chunk in enumerate(chunks):
+        for i, chunk in enumerate(chunks[:100]):  # Only check first 100 chunks
             chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
             overlap = len(query_words & chunk_words)
             if overlap > 0:
@@ -678,7 +672,7 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES
+# UPLOAD ROUTES (Memory Optimized)
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -696,6 +690,8 @@ def upload_file():
             file.save(filepath)
             
             file_size = os.path.getsize(filepath) / (1024 * 1024)
+            
+            # Limit to 50 pages max for memory
             text, pages = extract_pdf_text_streaming(filepath)
             
             if not text or text.startswith("PDF extraction error"):
@@ -737,7 +733,6 @@ def upload_image():
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
-        uploaded_texts['images'].append(f"Image uploaded: {filename}")
         return jsonify({'message': 'Image uploaded successfully'}), 200
     else:
         return jsonify({'error': 'Unsupported file type'}), 400
@@ -772,8 +767,7 @@ def ask_ai():
     if not session_id:
         return jsonify({"answer": "Please upload a document first before asking questions."})
     
-    # Get relevant chunks using RAG
-    relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4500)
+    relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000)
     
     if not relevant_chunks:
         return jsonify({"answer": "I couldn't find relevant information in the uploaded document. Please try a different question."})
@@ -784,7 +778,6 @@ def ask_ai():
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
-    # Build system prompt
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
@@ -802,7 +795,6 @@ def ask_ai():
         "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n"
     )
     
-    # Get AI response from OpenRouter with fallback
     answer = get_ai_response(system_prompt, user_query, relevant_chunks)
     
     if answer:
