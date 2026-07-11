@@ -4,7 +4,6 @@ import re
 import uuid
 import pickle
 import numpy as np
-import requests
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -33,270 +32,34 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# DATABASE INITIALIZATION - MUST BE BEFORE MODELS ✅
+# DATABASE INITIALIZATION
 # ================================================================
 db = SQLAlchemy(app)
 
 # ================================================================
-# OPENROUTER CONFIGURATION
+# GROQ API - MULTIPLE KEYS
 # ================================================================
+GROQ_API_KEYS = []
+for i in range(1, 6):
+    key = os.environ.get(f'GROQ_API_KEY_{i}', '')
+    if key:
+        GROQ_API_KEYS.append(key)
 
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+main_groq_key = os.environ.get('GROQ_API_KEY', '')
+if main_groq_key and main_groq_key not in GROQ_API_KEYS:
+    GROQ_API_KEYS.append(main_groq_key)
 
-# Free models with fallback support
-FREE_MODELS = [
-    "google/gemini-2.0-flash-lite-preview-02-05:free",
-    "google/gemini-2.0-flash-exp:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "microsoft/phi-3-mini-128k-instruct:free",
-]
+current_key_index = 0
 
-current_model_index = 0
-model_failures = {}
+def get_next_groq_key():
+    global current_key_index
+    if not GROQ_API_KEYS:
+        return None
+    key = GROQ_API_KEYS[current_key_index % len(GROQ_API_KEYS)]
+    current_key_index += 1
+    return key
 
-def get_next_model():
-    global current_model_index
-    available_models = [m for m in FREE_MODELS if m not in model_failures]
-    if not available_models:
-        model_failures.clear()
-        available_models = FREE_MODELS
-    
-    model = available_models[current_model_index % len(available_models)]
-    current_model_index += 1
-    return model
-
-# ================================================================
-# GENERAL RESPONSE (ከሰነድ ውጭ)
-# ================================================================
-
-def get_general_response(user_query, query_lang):
-    """አጠቃላይ ጥያቄዎችን ለመመለስ"""
-    
-    if query_lang == 'amharic':
-        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
-    else:
-        lang_instruction = "You MUST respond in English."
-    
-    system_prompt = (
-        "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke.\n\n"
-        f"=== LANGUAGE RULE ===\n{lang_instruction}\n"
-        "Do NOT switch languages.\n\n"
-        "=== ABOUT THE CREATOR ===\n"
-        "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
-        "=== ACCURACY RULE ===\n"
-        "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.'\n\n"
-        "=== AMHARIC SPELLING ===\n"
-        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
-        "=== INSTRUCTION ===\n"
-        "Answer the user's question as a helpful AI tutor. Provide clear, accurate, and educational responses."
-    )
-    
-    if not OPENROUTER_API_KEY:
-        return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
-    
-    full_prompt = f"{system_prompt}\n\nUser: {user_query}"
-    
-    max_attempts = len(FREE_MODELS) * 2
-    for attempt in range(max_attempts):
-        model = get_next_model()
-        print(f"🤖 Attempt {attempt+1}: Using {model}")
-        
-        try:
-            response = requests.post(
-                OPENROUTER_BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://nigat-tutor-ai.onrender.com",
-                    "X-Title": "Nigat Tutor AI"
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_query}
-                    ],
-                    "temperature": 0.05,
-                    "max_tokens": 1024,
-                },
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if 'choices' in data and data['choices']:
-                    print(f"✅ Response received from {model}")
-                    if model in model_failures:
-                        del model_failures[model]
-                    return data['choices'][0]['message']['content']
-            else:
-                error_msg = response.text[:200] if response.text else "Unknown error"
-                print(f"⚠️ {model} error: {response.status_code} - {error_msg}")
-                model_failures[model] = True
-                if response.status_code == 429:
-                    print(f"⏳ Rate limit on {model}, switching to next model...")
-                    continue
-                    
-        except requests.exceptions.Timeout:
-            print(f"⏰ Timeout on {model}, trying next...")
-            model_failures[model] = True
-            continue
-        except Exception as e:
-            print(f"⚠️ Error with {model}: {e}")
-            model_failures[model] = True
-            continue
-    
-    return "⚠️ All available models failed. Please try again later or check your OpenRouter API key."
-
-# ================================================================
-# DOCUMENT-BASED RESPONSE
-# ================================================================
-
-def get_document_response(system_prompt, user_query, context_chunks):
-    if not OPENROUTER_API_KEY:
-        return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
-    
-    context_text = "\n\n---\n\n".join(context_chunks) if context_chunks else "No context available."
-    prompt_type = detect_prompt_type(user_query)
-    prompt_template = get_prompt_template(prompt_type)
-    
-    if detect_language(user_query) == 'amharic':
-        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
-    else:
-        lang_instruction = "You MUST respond in English."
-    
-    full_prompt = (
-        f"{system_prompt}\n\n"
-        f"=== LANGUAGE ===\n{lang_instruction}\n\n"
-        f"=== TASK ===\n{prompt_template}\n\n"
-        f"=== CONTEXT ===\n{context_text}\n\n"
-        f"=== USER QUESTION ===\n{user_query}"
-    )
-    
-    estimated_tokens = len(full_prompt) // 4
-    print(f"📊 Estimated tokens: {estimated_tokens}")
-    
-    max_attempts = len(FREE_MODELS) * 2
-    for attempt in range(max_attempts):
-        model = get_next_model()
-        print(f"🤖 Attempt {attempt+1}: Using {model}")
-        
-        try:
-            response = requests.post(
-                OPENROUTER_BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://nigat-tutor-ai.onrender.com",
-                    "X-Title": "Nigat Tutor AI"
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": full_prompt}
-                    ],
-                    "temperature": 0.05,
-                    "max_tokens": 1024,
-                },
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if 'choices' in data and data['choices']:
-                    print(f"✅ Response received from {model}")
-                    if model in model_failures:
-                        del model_failures[model]
-                    return data['choices'][0]['message']['content']
-            else:
-                error_msg = response.text[:200] if response.text else "Unknown error"
-                print(f"⚠️ {model} error: {response.status_code} - {error_msg}")
-                model_failures[model] = True
-                if response.status_code == 429:
-                    print(f"⏳ Rate limit on {model}, switching to next model...")
-                    continue
-                    
-        except requests.exceptions.Timeout:
-            print(f"⏰ Timeout on {model}, trying next...")
-            model_failures[model] = True
-            continue
-        except Exception as e:
-            print(f"⚠️ Error with {model}: {e}")
-            model_failures[model] = True
-            continue
-    
-    return "⚠️ All available models failed. Please try again later or check your OpenRouter API key."
-
-# ================================================================
-# PROMPT MANAGEMENT
-# ================================================================
-
-def detect_prompt_type(query):
-    query_lower = query.lower()
-    if any(w in query_lower for w in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
-        return 'daily_lesson'
-    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly']):
-        return 'annual_plan'
-    elif any(w in query_lower for w in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
-        return 'exam'
-    elif any(w in query_lower for w in ['summary', 'summarize', 'ማጠቃለያ']):
-        return 'summary'
-    return 'general'
-
-def get_prompt_template(prompt_type):
-    templates = {
-        'daily_lesson': """
-=== DAILY LESSON PLAN ===
-Generate a complete daily lesson plan with this structure:
-
-1. SCHOOL INFORMATION: School Name, Teacher Name, Grade/Section, Subject, Date, Unit, Topic, Page
-2. LESSON OVERVIEW: Rationale, Prerequisites, Competencies (3-5 bullet points)
-3. LESSON STAGES: A table with: Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment
-4. SUPPORT FOR LEARNERS: Table with: Category (Slow/Medium/Fast) | Support Strategies
-5. APPROVALS: Table with: Role | Name | Signature | Date
-6. TEACHER'S SELF-ASSESSMENT: Brief reflection
-
-Use information from the provided context to fill in the content.
-""",
-        'annual_plan': """
-=== ANNUAL LESSON PLAN ===
-Generate an annual lesson plan with this structure:
-
-1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Academic Year
-2. TABLE: Month | Week | Topics | Objectives | Methodology | Evaluation
-
-Use information from the provided context.
-""",
-        'exam': """
-=== EXAM GENERATOR ===
-Generate exam questions based on the provided content.
-Include:
-- Multiple choice questions (4 options each)
-- True/False questions
-- Short answer questions
-
-Use the context to create accurate, relevant questions.
-""",
-        'summary': """
-=== SUMMARY GENERATOR ===
-Create a comprehensive summary of the provided content.
-Include:
-- Main topics and key points
-- Important concepts
-- Key terms and definitions
-
-Keep the summary well-structured and easy to read.
-""",
-        'general': """
-=== GENERAL ASSISTANCE ===
-Answer the user's question based on the provided context.
-Be helpful, accurate, and cite specific information from the context.
-If the context doesn't contain the answer, say so clearly.
-"""
-    }
-    return templates.get(prompt_type, templates['general'])
+print(f"✅ Loaded {len(GROQ_API_KEYS)} Groq API keys")
 
 # ================================================================
 # HELPER FUNCTIONS
@@ -326,12 +89,7 @@ def remove_duplicate_sentences(text):
             unique.append(s)
     return ' '.join(unique)
 
-# ================================================================
-# MEMORY OPTIMIZED PDF EXTRACTION
-# ================================================================
-
 def extract_pdf_text_streaming(filepath):
-    """Extract PDF text page by page with memory optimization"""
     try:
         import pdfplumber
         text_parts = []
@@ -339,21 +97,18 @@ def extract_pdf_text_streaming(filepath):
         
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
-            # Process only first 30 pages to save memory
-            max_pages = min(total_pages, 30)
+            max_pages = min(total_pages, 50)
             
             for i in range(max_pages):
                 page = pdf.pages[i]
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
-                # Free page memory
                 page = None
                 if (i + 1) % 10 == 0:
                     print(f"📄 Extracted page {i+1}/{max_pages}")
         
         full_text = "\n\n".join(text_parts)
-        # Free text_parts memory
         text_parts = None
         return full_text, max_pages if full_text else "No text found in PDF.", 0
     except Exception as e:
@@ -396,7 +151,7 @@ def get_embedding(text):
         return np.zeros(384)
 
 # ================================================================
-# MEMORY OPTIMIZED RAG SYSTEM
+# RAG SYSTEM
 # ================================================================
 
 class EnterpriseRAG:
@@ -404,9 +159,9 @@ class EnterpriseRAG:
         self.doc_metadata = {}
         self.chunk_texts = {}
         self.faiss_indexes = {}
-        self.chunk_size = 250
-        self.overlap = 30
-        self.max_chunks = 300
+        self.chunk_size = 300
+        self.overlap = 50
+        self.max_chunks = 500
     
     def get_index_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}.faiss")
@@ -423,7 +178,7 @@ class EnterpriseRAG:
                 break
             end = min(start + self.chunk_size, total_words)
             chunk_words = words[start:end]
-            if len(chunk_words) < 10:
+            if len(chunk_words) < 15:
                 continue
             chunk_count += 1
             yield ' '.join(chunk_words)
@@ -455,7 +210,7 @@ class EnterpriseRAG:
             embeddings.append(emb)
             chunk_count += 1
             
-            if faiss_index is not None and len(embeddings) >= 30:
+            if faiss_index is not None and len(embeddings) >= 50:
                 if embeddings:
                     emb_array = np.array(embeddings).astype('float32')
                     faiss_index.add(emb_array)
@@ -529,7 +284,7 @@ class EnterpriseRAG:
                 query_emb = get_embedding(query)
                 query_emb = np.array([query_emb]).astype('float32')
                 
-                k = min(15, len(chunks))
+                k = min(20, len(chunks))
                 scores, indices = faiss_index.search(query_emb, k)
                 
                 selected = []
@@ -542,15 +297,16 @@ class EnterpriseRAG:
                     if total_tokens + estimated <= max_tokens:
                         selected.append(chunk)
                         total_tokens += estimated
-                    if len(selected) >= 4:
+                    if len(selected) >= 5:
                         break
                 return selected if selected else [chunks[0]]
             except:
                 pass
         
+        # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
-        for i, chunk in enumerate(chunks[:80]):
+        for i, chunk in enumerate(chunks[:100]):
             chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
             overlap = len(query_words & chunk_words)
             if overlap > 0:
@@ -583,10 +339,189 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS - ከDB በኋላ ✅
+# PROMPT MANAGEMENT
+# ================================================================
+
+def detect_prompt_type(query):
+    query_lower = query.lower()
+    if any(w in query_lower for w in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
+        return 'daily_lesson'
+    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly']):
+        return 'annual_plan'
+    elif any(w in query_lower for w in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
+        return 'exam'
+    elif any(w in query_lower for w in ['summary', 'summarize', 'ማጠቃለያ']):
+        return 'summary'
+    return 'general'
+
+def get_prompt_template(prompt_type):
+    templates = {
+        'daily_lesson': """
+=== DAILY LESSON PLAN ===
+Generate a complete daily lesson plan with this structure:
+
+1. SCHOOL INFORMATION: School Name, Teacher Name, Grade/Section, Subject, Date, Unit, Topic, Page
+2. LESSON OVERVIEW: Rationale, Prerequisites, Competencies (3-5 bullet points)
+3. LESSON STAGES: A table with: Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment
+4. SUPPORT FOR LEARNERS: Table with: Category (Slow/Medium/Fast) | Support Strategies
+5. APPROVALS: Table with: Role | Name | Signature | Date
+6. TEACHER'S SELF-ASSESSMENT: Brief reflection
+
+Use information from the provided context to fill in the content.
+""",
+        'annual_plan': """
+=== ANNUAL LESSON PLAN ===
+Generate an annual lesson plan with this structure:
+
+1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Academic Year
+2. TABLE: Month | Week | Topics | Objectives | Methodology | Evaluation
+
+Use information from the provided context.
+""",
+        'exam': """
+=== EXAM GENERATOR ===
+Generate exam questions based on the provided content.
+Include:
+- Multiple choice questions (4 options each)
+- True/False questions
+- Short answer questions
+
+Use the context to create accurate, relevant questions.
+""",
+        'summary': """
+=== SUMMARY GENERATOR ===
+Create a comprehensive summary of the provided content.
+Include:
+- Main topics and key points
+- Important concepts
+- Key terms and definitions
+
+Keep the summary well-structured and easy to read.
+""",
+        'general': """
+=== GENERAL ASSISTANCE ===
+Answer the user's question based on the provided context.
+Be helpful, accurate, and cite specific information from the context.
+If the context doesn't contain the answer, say so clearly.
+"""
+    }
+    return templates.get(prompt_type, templates['general'])
+
+# ================================================================
+# AI RESPONSE FUNCTION (GROQ ONLY)
+# ================================================================
+
+def get_ai_response(system_prompt, user_query, context_chunks):
+    """Get response from Groq API using multiple keys (round-robin)"""
+    
+    try:
+        from groq import Groq
+        key = get_next_groq_key()
+        if key is None:
+            return "⚠️ No Groq API keys available. Please add at least one API key."
+        
+        # Build context
+        context_text = "\n\n---\n\n".join(context_chunks) if context_chunks else "No context available."
+        prompt_type = detect_prompt_type(user_query)
+        prompt_template = get_prompt_template(prompt_type)
+        
+        if detect_language(user_query) == 'amharic':
+            lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
+        else:
+            lang_instruction = "You MUST respond in English."
+        
+        full_prompt = (
+            f"{system_prompt}\n\n"
+            f"=== LANGUAGE ===\n{lang_instruction}\n\n"
+            f"=== TASK ===\n{prompt_template}\n\n"
+            f"=== CONTEXT ===\n{context_text}\n\n"
+            f"=== USER QUESTION ===\n{user_query}"
+        )
+        
+        client = Groq(api_key=key)
+        print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
+        
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": full_prompt}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.05,
+            max_tokens=1024,
+            top_p=0.85,
+        )
+        
+        if chat_completion and chat_completion.choices:
+            print("✅ Groq response received")
+            return chat_completion.choices[0].message.content
+            
+    except Exception as e:
+        print(f"⚠️ Groq error: {e}")
+        return f"AI Error: {str(e)}"
+    
+    return "⚠️ No response from AI service."
+
+# ================================================================
+# GENERAL KNOWLEDGE RESPONSE (ከሰነድ ውጭ)
+# ================================================================
+
+def get_general_response(user_query, query_lang):
+    """አጠቃላይ ጥያቄዎችን ለመመለስ"""
+    
+    try:
+        from groq import Groq
+        key = get_next_groq_key()
+        if key is None:
+            return "⚠️ No Groq API keys available."
+        
+        if query_lang == 'amharic':
+            lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
+        else:
+            lang_instruction = "You MUST respond in English."
+        
+        system_prompt = (
+            "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke.\n\n"
+            f"=== LANGUAGE RULE ===\n{lang_instruction}\n"
+            "Do NOT switch languages.\n\n"
+            "=== ABOUT THE CREATOR ===\n"
+            "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
+            "=== ACCURACY RULE ===\n"
+            "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.'\n\n"
+            "=== AMHARIC SPELLING ===\n"
+            "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
+            "=== INSTRUCTION ===\n"
+            "Answer the user's question as a helpful AI tutor. Provide clear, accurate, and educational responses."
+        )
+        
+        client = Groq(api_key=key)
+        print("🤖 Using Groq API (llama-3.3-70b-versatile) for general knowledge...")
+        
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.05,
+            max_tokens=1024,
+            top_p=0.85,
+        )
+        
+        if chat_completion and chat_completion.choices:
+            print("✅ Groq response received")
+            return chat_completion.choices[0].message.content
+            
+    except Exception as e:
+        print(f"⚠️ Groq error: {e}")
+        return f"AI Error: {str(e)}"
+    
+    return "⚠️ No response from AI service."
+
+# ================================================================
+# MODELS
 # ================================================================
 class Course(db.Model):
-    __tablename__ = 'course'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=False)
@@ -594,7 +529,6 @@ class Course(db.Model):
     quiz_link = db.Column(db.String(500))
 
 class AnnualPlan(db.Model):
-    __tablename__ = 'annual_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -610,7 +544,6 @@ class AnnualPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class LaboratoryPlan(db.Model):
-    __tablename__ = 'laboratory_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -621,7 +554,6 @@ class LaboratoryPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class DailyPlan(db.Model):
-    __tablename__ = 'daily_plan'
     id = db.Column(db.Integer, primary_key=True)
     teacher_name = db.Column(db.String(100))
     school_name = db.Column(db.String(200))
@@ -660,7 +592,6 @@ class DailyPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class PeaceClubPlan(db.Model):
-    __tablename__ = 'peace_club_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     district = db.Column(db.String(200))
@@ -693,7 +624,6 @@ class PeaceClubPlan(db.Model):
         return json.loads(self.teacher_members) if self.teacher_members else []
 
 class PeaceClubActivity(db.Model):
-    __tablename__ = 'peace_club_activity'
     id = db.Column(db.Integer, primary_key=True)
     club_plan_id = db.Column(db.Integer, db.ForeignKey('peace_club_plan.id'))
     activity_number = db.Column(db.Integer)
@@ -712,6 +642,7 @@ class PeaceClubActivity(db.Model):
     sene = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+# --- Admin Views ---
 admin = Admin(app, name='Nigat Admin')
 admin.add_view(ModelView(Course, db))
 admin.add_view(ModelView(AnnualPlan, db))
@@ -723,6 +654,7 @@ admin.add_view(ModelView(PeaceClubActivity, db))
 # ================================================================
 # ROUTES
 # ================================================================
+
 @app.route('/')
 def home():
     try:
@@ -757,6 +689,7 @@ def course_detail(course_id):
 # ================================================================
 # UPLOAD ROUTES
 # ================================================================
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -830,7 +763,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የተሻሻለ)
+# AI CHAT ROUTE
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -858,7 +791,6 @@ def ask_ai():
     relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000)
     
     if not relevant_chunks:
-        # ምንም ተዛማጅ ክፍል ካልተገኘ አጠቃላይ መልስ ይስጥ
         print("📚 No relevant chunks found, using general knowledge mode")
         answer = get_general_response(user_query, query_lang)
         if answer:
@@ -888,7 +820,7 @@ def ask_ai():
         "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n"
     )
     
-    answer = get_document_response(system_prompt, user_query, relevant_chunks)
+    answer = get_ai_response(system_prompt, user_query, relevant_chunks)
     
     if answer:
         answer = remove_duplicate_sentences(answer)
@@ -898,6 +830,7 @@ def ask_ai():
 # ================================================================
 # DOWNLOAD WORD
 # ================================================================
+
 @app.route('/download_word', methods=['POST'])
 def download_word():
     data = request.json
@@ -998,6 +931,7 @@ def download_word():
 # ================================================================
 # LESSON PLAN ROUTES
 # ================================================================
+
 @app.route('/lesson')
 def lesson_home():
     annual_plans = AnnualPlan.query.all()
@@ -1147,6 +1081,7 @@ def daily_plan():
 # ================================================================
 # PEACE CLUB ROUTES
 # ================================================================
+
 @app.route('/peaceclub')
 def peaceclub_home():
     club_plans = PeaceClubPlan.query.all()
@@ -1360,6 +1295,7 @@ def peaceclub_delete(plan_id):
 # ================================================================
 # CREATE TABLES ON APPLICATION STARTUP
 # ================================================================
+
 with app.app_context():
     try:
         db.create_all()
@@ -1371,6 +1307,7 @@ with app.app_context():
 # ================================================================
 # MAIN
 # ================================================================
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
