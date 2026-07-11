@@ -3,409 +3,870 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
-    <!-- ============================================================
-    SEO META TAGS - ENHANCED
-    ============================================================ -->
-    <title>Nigat Tutor AI - ንጋት አስተማሪ AI - Free AI Tutor for Ethiopian Students</title>
-    <meta name="description" content="Nigat Tutor AI - Free AI Tutor for Ethiopian students. Learn with AI in Amharic and English. ንጋት አስተማሪ AI - ለኢትዮጵያ ተማሪዎች ነጻ የAI አስተማሪ።">
-    <meta name="keywords" content="Nigat Tutor AI, AI Tutor, Ethiopia, Amharic, Free, ንጋት አስተማሪ AI, አማርኛ, ነጻ, Ethiopian Education, Online Tutor, Lesson Plan, የትምህርት እቅድ">
-    <meta name="author" content="Teacher Fisaha Melke">
-    <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://nigat-tutor-ai.onrender.com/">
-    
-    <!-- Open Graph (ለማህበራዊ ሚዲያ) -->
-    <meta property="og:title" content="Nigat Tutor AI - ንጋት አስተማሪ AI">
-    <meta property="og:description" content="Free AI Tutor for Ethiopian students. ለኢትዮጵያ ተማሪዎች ነጻ የAI አስተማሪ።">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://nigat-tutor-ai.onrender.com/">
-    
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Nigat Tutor AI - ንጋት አስተማሪ AI">
-    <meta name="twitter:description" content="Free AI Tutor for Ethiopian students. ለኢትዮጵያ ተማሪዎች ነጻ የAI አስተማሪ።">
-    
-    <!-- ============================================================
-    SCRIPTS & STYLES
-    ============================================================ -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Nigat Tutor AI - Free AI Tutor for Ethiopian Students & Teachers</title>
+    <style>
+        /* ===== RESET & BASE ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            color: #ffffff;
+        }
+
+        /* ===== CONTAINER ===== */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* ===== HEADER ===== */
+        header {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            padding: 20px 30px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .logo h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f093fb, #f5576c, #4facfe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo p {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 2px;
+        }
+
+        nav {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        nav a {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            padding: 8px 18px;
+            border-radius: 10px;
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+
+        nav a.active {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            color: #ffffff;
+            border-color: transparent;
+        }
+
+        /* ===== FLASH MESSAGES ===== */
+        .flash {
+            padding: 14px 20px;
+            border-radius: 12px;
+            margin-bottom: 18px;
+            font-weight: 500;
+            backdrop-filter: blur(8px);
+        }
+
+        .flash.success {
+            background: rgba(72, 187, 120, 0.25);
+            border: 1px solid rgba(72, 187, 120, 0.4);
+            color: #9ae6b4;
+        }
+
+        .flash.error {
+            background: rgba(245, 101, 101, 0.25);
+            border: 1px solid rgba(245, 101, 101, 0.4);
+            color: #feb2b2;
+        }
+
+        /* ===== MAIN CONTENT ===== */
+        .main-content {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .main-content h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .main-content > p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1.05rem;
+            margin-bottom: 25px;
+        }
+
+        /* ===== CHAT SECTION ===== */
+        .chat-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .chat-header h3 {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        /* ===== CHAT MESSAGES ===== */
+        #chat-messages {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 200px;
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        #chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #chat-messages::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }
+
+        #chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .user-msg {
+            background: rgba(79, 172, 254, 0.2);
+            padding: 12px 18px;
+            margin: 8px 0;
+            border-radius: 12px;
+            text-align: right;
+            border: 1px solid rgba(79, 172, 254, 0.15);
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .ai-msg {
+            background: rgba(245, 87, 108, 0.15);
+            padding: 12px 18px;
+            margin: 8px 0;
+            border-radius: 12px;
+            border: 1px solid rgba(245, 87, 108, 0.12);
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .ai-msg strong {
+            color: #f5576c;
+        }
+
+        .user-msg strong {
+            color: #4facfe;
+        }
+
+        .loading {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 18px;
+            margin: 8px 0;
+            border-radius: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            font-style: italic;
+        }
+
+        /* ===== CHAT INPUT ===== */
+        .chat-input {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            align-items: center;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 14px 20px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #ffffff;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input input::placeholder {
+            color: rgba(255, 255, 255, 0.35);
+        }
+
+        .chat-input input:focus {
+            outline: none;
+            border-color: rgba(79, 172, 254, 0.4);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* ===== PLUS BUTTON ===== */
+        .plus-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            padding: 0;
+            border-radius: 12px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .plus-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+            transform: rotate(90deg);
+        }
+
+        /* ===== DROPDOWN MENU ===== */
+        .dropdown-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            bottom: 60px;
+            left: 0;
+            background: rgba(30, 27, 75, 0.95);
+            backdrop-filter: blur(16px);
+            border-radius: 14px;
+            padding: 10px 0;
+            min-width: 220px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+        }
+
+        .dropdown-menu.show {
+            display: block;
+        }
+
+        .dropdown-menu button,
+        .dropdown-menu label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 12px 20px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+            font-family: inherit;
+        }
+
+        .dropdown-menu button:hover,
+        .dropdown-menu label:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #ffffff;
+        }
+
+        .dropdown-menu .icon {
+            font-size: 1.2rem;
+        }
+
+        .dropdown-menu input[type="file"] {
+            display: none;
+        }
+
+        /* ===== VOICE BUTTON ===== */
+        .voice-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            padding: 0;
+            border-radius: 12px;
+            font-size: 1.3rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .voice-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+            transform: scale(1.05);
+        }
+
+        .voice-btn.recording {
+            background: rgba(245, 87, 108, 0.3);
+            border-color: #f5576c;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(245, 87, 108, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0); }
+        }
+
+        /* ===== SEND BUTTON ===== */
+        .send-btn {
+            padding: 14px 30px;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .send-btn:hover {
+            transform: scale(1.03);
+            box-shadow: 0 8px 30px rgba(79, 172, 254, 0.3);
+        }
+
+        /* ===== UPLOAD SECTION ===== */
+        .upload-section {
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-top: 20px;
+            border: 1px dashed rgba(255, 255, 255, 0.08);
+            display: none;
+        }
+
+        .upload-section.show {
+            display: block;
+        }
+
+        .upload-section h4 {
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+        }
+
+        .upload-section input[type="file"] {
+            display: block;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .upload-section .upload-btn {
+            margin-top: 10px;
+            padding: 10px 25px;
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-section .upload-btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 30px rgba(245, 87, 108, 0.3);
+        }
+
+        /* ===== COURSES ===== */
+        .courses-section {
+            margin-top: 30px;
+        }
+
+        .courses-section h3 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .courses-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+
+        .course-card {
+            background: rgba(255, 255, 255, 0.06);
+            padding: 20px 22px;
+            border-radius: 14px;
+            border-left: 5px solid #4facfe;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(4px);
+        }
+
+        .course-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .course-card h4 {
+            font-size: 1.1rem;
+            color: #ffffff;
+            margin-bottom: 6px;
+        }
+
+        .course-card p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .course-card .btn {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .course-card .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 25px rgba(79, 172, 254, 0.3);
+        }
+
+        /* ===== FOOTER ===== */
+        footer {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.3);
+            padding: 25px 0 10px 0;
+            font-size: 0.85rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            margin-top: 30px;
+        }
+
+        footer span {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: stretch;
+                text-align: center;
+            }
+
+            nav {
+                justify-content: center;
+            }
+
+            .main-content h2 {
+                font-size: 1.5rem;
+            }
+
+            .courses-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .chat-input {
+                flex-wrap: wrap;
+            }
+
+            .chat-input input {
+                flex: 1 1 100%;
+                order: 1;
+            }
+
+            .plus-btn {
+                order: 2;
+            }
+
+            .voice-btn {
+                order: 3;
+            }
+
+            .send-btn {
+                order: 4;
+            }
+
+            .dropdown-menu {
+                bottom: 55px;
+                left: 0;
+                min-width: 200px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .plus-btn, .voice-btn {
+                width: 44px;
+                height: 44px;
+                font-size: 1.2rem;
+            }
+
+            .send-btn {
+                padding: 12px 20px;
+                font-size: 14px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <nav>
-        <a href="{{ url_for('home') }}">Home</a>
-        <a href="{{ url_for('about') }}">About Us</a>
-        <a href="{{ url_for('contact') }}">Contact</a>
-        <a href="{{ url_for('register') }}">Register</a>
-        <a href="{{ url_for('upload_file') }}">Upload</a>
-        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
-        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
-    </nav>
 
-    <section class="main-container">
-        <div class="chat-box">
-            <h2>Nigat Tutor AI</h2>
-            <p class="chat-sub">Ask me anything. / ማንኛውንም ጥያቄ ይጠይቁኝ።</p>
+    <div class="container">
 
-            <div class="chat-history" id="chat-history">
-                <p class="placeholder">Start a conversation... / ውይይት ይጀምሩ...</p>
+        <!-- ===== HEADER ===== -->
+        <header>
+            <div class="logo">
+                <h1>🌟 Nigat Tutor AI</h1>
+                <p>Free AI Tutor for Ethiopian Students & Teachers | ለኢትዮጵያ ተማሪዎች እና መምህራን ነጻ የAI አስተማሪ</p>
+            </div>
+            <nav>
+                <a href="/" class="active">🏠 Home</a>
+                <a href="/about">ℹ️ About</a>
+                <a href="/contact">📧 Contact</a>
+                <a href="/register">📝 Register</a>
+            </nav>
+        </header>
+
+        <!-- ===== FLASH MESSAGES ===== -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- ===== MAIN CONTENT ===== -->
+        <div class="main-content">
+
+            <h2>Welcome to Nigat Tutor AI</h2>
+            <p>Ask me anything about your subjects, lesson plans, or academic questions.</p>
+
+            <!-- ===== CHAT SECTION ===== -->
+            <div class="chat-section">
+
+                <div class="chat-header">
+                    <h3>💬 Ask Nigat AI</h3>
+                </div>
+
+                <!-- ===== CHAT MESSAGES ===== -->
+                <div id="chat-messages">
+                    <p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>
+                </div>
+
+                <!-- ===== CHAT INPUT ===== -->
+                <div class="chat-input">
+                    <input type="text" id="user-input" placeholder="Ask anything..." onkeypress="if(event.key==='Enter') sendMessage()">
+
+                    <!-- ===== + PLUS BUTTON ===== -->
+                    <div class="dropdown-container">
+                        <button class="plus-btn" id="dropdownToggle" onclick="toggleDropdown()">+</button>
+                        <div class="dropdown-menu" id="dropdownMenu">
+                            <button onclick="newChat()">
+                                <span class="icon">✨</span> New Chat
+                            </button>
+                            <label>
+                                <span class="icon">📤</span> Upload PDF
+                                <input type="file" id="pdfUpload" accept=".pdf" onchange="uploadPDF(this)">
+                            </label>
+                            <label>
+                                <span class="icon">🖼️</span> Upload Image
+                                <input type="file" id="imageUpload" accept="image/*" onchange="uploadImage(this)">
+                            </label>
+                            <button onclick="clearContext()">
+                                <span class="icon">🗑️</span> Clear Context
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ===== VOICE BUTTON ===== -->
+                    <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Voice Input">
+                        🎤
+                    </button>
+
+                    <!-- ===== SEND BUTTON ===== -->
+                    <button class="send-btn" onclick="sendMessage()">Send</button>
+                </div>
+
+                <!-- ===== UPLOAD SECTION ===== -->
+                <div class="upload-section" id="uploadSection">
+                    <h4>📤 Upload PDF</h4>
+                    <form action="/upload" method="POST" enctype="multipart/form-data">
+                        <input type="file" name="file" accept=".pdf" required>
+                        <button type="submit" class="upload-btn">Upload</button>
+                    </form>
+                </div>
+
             </div>
 
-            <div class="chat-input">
-                <textarea id="user-query" placeholder="Ask anything..." rows="1"></textarea>
-                <div class="chat-actions">
-                    <button onclick="startVoice()" class="btn-microphone" title="Voice Input / ድምጽ አስገባ"><i class="fas fa-microphone"></i></button>
-                    <button onclick="togglePlusMenu()" class="btn-plus" id="plusBtn">+</button>
-                    <button onclick="askAI()" class="btn-purple"><i class="fas fa-paper-plane"></i> Send</button>
+            <!-- ===== COURSES SECTION ===== -->
+            <div class="courses-section">
+                <h3>📚 Our Courses</h3>
+                <div class="courses-grid">
+                    {% if courses %}
+                        {% for course in courses %}
+                            <div class="course-card" style="border-left-color: {{ course.color or '#4facfe' }}">
+                                <h4>{{ course.name }}</h4>
+                                <p>{{ course.description }}</p>
+                                <a href="/course/{{ course.id }}" class="btn">View Course</a>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <p style="color: rgba(255,255,255,0.3);">No courses available yet.</p>
+                    {% endif %}
                 </div>
-                <div class="plus-menu" id="plusMenu">
-                    <div class="plus-menu-item" onclick="newChat()">
-                        <i class="fas fa-plus-circle"></i> New Chat / አዲስ ውይይት
-                    </div>
-                    <div class="plus-menu-item" onclick="document.getElementById('pdfUpload').click()">
-                        <i class="fas fa-file-pdf"></i> Upload PDF / ፒዲኤፍ ላክ
-                    </div>
-                    <div class="plus-menu-item" onclick="document.getElementById('imageUpload').click()">
-                        <i class="fas fa-image"></i> Upload Image / ምስል ላክ
-                    </div>
-                    <div class="plus-menu-item" onclick="startVoice()">
-                        <i class="fas fa-microphone"></i> Voice Input / ድምጽ አስገባ
-                    </div>
-                    <div class="plus-menu-item" onclick="clearContext()">
-                        <i class="fas fa-eraser"></i> Clear Context / ማህደር አጽዳ
-                    </div>
-                </div>
-                <input type="file" id="pdfUpload" accept=".pdf" style="display:none" onchange="uploadPDF(event)">
-                <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="uploadImage(event)">
             </div>
-        </div>
-    </section>
 
-    <section class="courses-section">
-        <h2>Our Courses</h2>
-        <div class="courses-grid">
-            {% for course in courses %}
-            <a href="{{ url_for('course_detail', course_id=course.id) }}" class="course-link">
-                <div class="course-item" style="border-top: 3px solid {{ course.color }};">
-                    <h3>{{ course.name }}</h3>
-                    <p>{{ course.description }}</p>
-                </div>
-            </a>
-            {% endfor %}
         </div>
-    </section>
 
+        <!-- ===== FOOTER ===== -->
+        <footer>
+            &copy; 2026 <span>Nigat Tutor AI</span> | Free AI Tutor for Ethiopian Students & Teachers
+        </footer>
+
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- JAVASCRIPT -->
+    <!-- ============================================================ -->
     <script>
-        // ============================================================
-        // CONFIGURE MARKED - FIXED FOR TABLES
-        // ============================================================
-        marked.use({
-            gfm: true,
-            breaks: true
+        // ===== DROPDOWN TOGGLE =====
+        function toggleDropdown() {
+            const menu = document.getElementById('dropdownMenu');
+            menu.classList.toggle('show');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const container = document.querySelector('.dropdown-container');
+            if (container && !container.contains(event.target)) {
+                document.getElementById('dropdownMenu').classList.remove('show');
+            }
         });
 
-        const renderer = {
-            table: function(header, body) {
-                return '<div class="table-wrapper"><table class="markdown-table">\n' + header + '\n' + body + '\n</table></div>';
-            },
-            tablerow: function(content) {
-                return '<tr>\n' + content + '\n</tr>';
-            },
-            tablecell: function(content, flags) {
-                const type = flags.header ? 'th' : 'td';
-                return '<' + type + '>' + content + '</' + type + '>\n';
+        // ===== NEW CHAT =====
+        function newChat() {
+            const messages = document.getElementById('chat-messages');
+            messages.innerHTML = `<p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>`;
+            document.getElementById('user-input').value = '';
+            document.getElementById('dropdownMenu').classList.remove('show');
+        }
+
+        // ===== UPLOAD PDF =====
+        function uploadPDF(input) {
+            const file = input.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert('PDF uploaded successfully!');
+                    document.getElementById('dropdownMenu').classList.remove('show');
+                })
+                .catch(error => {
+                    alert('Error uploading PDF');
+                });
             }
-        };
+        }
 
-        marked.use({ renderer: renderer });
-
-        // ============================================================
-        // CHAT LOGIC
-        // ============================================================
-        let chatHistory = [];
-        let currentAIResponse = '';
-        let isStreaming = false;
-        let streamInterval = null;
-
-        function addMessage(role, text, isStream = false) {
-            const container = document.getElementById('chat-history');
-            if (container.children.length === 1 && container.children[0].classList.contains('placeholder')) {
-                container.innerHTML = '';
+        // ===== UPLOAD IMAGE =====
+        function uploadImage(input) {
+            const file = input.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('image', file);
+                
+                fetch('/upload_image', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert('Image uploaded successfully!');
+                    document.getElementById('dropdownMenu').classList.remove('show');
+                })
+                .catch(error => {
+                    alert('Error uploading image');
+                });
             }
+        }
 
-            const div = document.createElement('div');
-            div.className = 'msg ' + role;
+        // ===== VOICE INPUT =====
+        let recognition = null;
+        let isRecording = false;
 
-            if (role === 'ai') {
-                if (isStream) {
-                    div.innerHTML = '';
-                    div.dataset.fullText = text;
-                    container.appendChild(div);
-                    container.scrollTop = container.scrollHeight;
-                    startStreaming(div);
-                    return;
-                } else {
-                    try {
-                        const htmlContent = marked.parse(text);
-                        div.innerHTML = htmlContent;
-                    } catch (e) {
-                        console.error('❌ Markdown error:', e);
-                        div.textContent = text;
-                    }
-                    const downloadBtn = document.createElement('button');
-                    downloadBtn.className = 'btn-download';
-                    downloadBtn.innerHTML = '<i class="fas fa-file-word"></i> Download';
-                    downloadBtn.onclick = function() { downloadWord(text); };
-                    div.appendChild(downloadBtn);
+        function toggleVoice() {
+            const voiceBtn = document.getElementById('voiceBtn');
+            
+            if (isRecording) {
+                if (recognition) {
+                    recognition.stop();
                 }
+                voiceBtn.classList.remove('recording');
+                voiceBtn.textContent = '🎤';
+                isRecording = false;
+                return;
+            }
+
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.lang = 'en-US';
+                recognition.continuous = false;
+                recognition.interimResults = false;
+
+                recognition.onstart = function() {
+                    voiceBtn.classList.add('recording');
+                    voiceBtn.textContent = '⏹️';
+                    isRecording = true;
+                };
+
+                recognition.onresult = function(event) {
+                    const transcript = event.results[0][0].transcript;
+                    document.getElementById('user-input').value = transcript;
+                    voiceBtn.classList.remove('recording');
+                    voiceBtn.textContent = '🎤';
+                    isRecording = false;
+                    sendMessage();
+                };
+
+                recognition.onerror = function(event) {
+                    voiceBtn.classList.remove('recording');
+                    voiceBtn.textContent = '🎤';
+                    isRecording = false;
+                    if (event.error !== 'not-allowed') {
+                        alert('Voice recognition error. Please try again.');
+                    }
+                };
+
+                recognition.onend = function() {
+                    voiceBtn.classList.remove('recording');
+                    voiceBtn.textContent = '🎤';
+                    isRecording = false;
+                };
+
+                recognition.start();
             } else {
-                div.textContent = text;
+                alert('Voice input is not supported in this browser.');
             }
-
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
-            chatHistory.push({ role, text });
         }
 
-        function startStreaming(div) {
-            const fullText = div.dataset.fullText;
-            let index = 0;
-            const chunkSize = 5;
-            if (streamInterval) clearInterval(streamInterval);
-            streamInterval = setInterval(() => {
-                if (index < fullText.length) {
-                    div.innerHTML += fullText.substring(index, index + chunkSize);
-                    index += chunkSize;
-                    div.scrollTop = div.scrollHeight;
-                    document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
-                } else {
-                    clearInterval(streamInterval);
-                    streamInterval = null;
-                    isStreaming = false;
-                    try {
-                        const fullHtml = marked.parse(fullText);
-                        div.innerHTML = fullHtml;
-                    } catch (e) {
-                        div.textContent = fullText;
-                    }
-                    const downloadBtn = document.createElement('button');
-                    downloadBtn.className = 'btn-download';
-                    downloadBtn.innerHTML = '<i class="fas fa-file-word"></i> Download';
-                    downloadBtn.onclick = function() { downloadWord(fullText); };
-                    div.appendChild(downloadBtn);
-                    currentAIResponse = fullText;
-                }
-            }, 25);
+        // ===== CLEAR CONTEXT =====
+        function clearContext() {
+            fetch('/clear_context', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('Context cleared successfully!');
+                document.getElementById('dropdownMenu').classList.remove('show');
+            })
+            .catch(error => {
+                alert('Error clearing context');
+            });
         }
 
-        function askAI() {
-            const input = document.getElementById('user-query');
+        // ===== SEND MESSAGE =====
+        function sendMessage() {
+            const input = document.getElementById('user-input');
+            const messages = document.getElementById('chat-messages');
             const query = input.value.trim();
-            if (!query) return;
-            if (streamInterval) {
-                clearInterval(streamInterval);
-                streamInterval = null;
-                isStreaming = false;
+
+            if (!query) {
+                alert('Please enter a question.');
+                return;
             }
-            addMessage('user', query);
+
+            messages.innerHTML += `<div class="user-msg"><strong>You:</strong> ${query}</div>`;
+            messages.innerHTML += `<div class="loading">🤔 Thinking...</div>`;
             input.value = '';
-            input.style.height = 'auto';
-            const container = document.getElementById('chat-history');
-            const placeholderDiv = document.createElement('div');
-            placeholderDiv.className = 'msg ai';
-            placeholderDiv.textContent = '⏳ Thinking...';
-            container.appendChild(placeholderDiv);
-            container.scrollTop = container.scrollHeight;
+            messages.scrollTop = messages.scrollHeight;
+
             fetch('/ask_ai', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query: query })
             })
-            .then(response => {
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                return response.json();
-            })
+            .then(response => response.json())
             .then(data => {
-                container.removeChild(placeholderDiv);
-                addMessage('ai', data.answer || 'No response.', true);
+                const loading = document.querySelector('.loading');
+                if (loading) loading.remove();
+                const formatted = data.answer.replace(/\n/g, '<br>');
+                messages.innerHTML += `<div class="ai-msg"><strong>🤖 Nigat AI:</strong><br>${formatted}</div>`;
+                messages.scrollTop = messages.scrollHeight;
             })
-            .catch(err => {
-                container.removeChild(placeholderDiv);
-                addMessage('ai', '❌ Error: ' + err.message);
+            .catch(() => {
+                const loading = document.querySelector('.loading');
+                if (loading) loading.remove();
+                messages.innerHTML += `<div class="ai-msg" style="background:rgba(245,101,101,0.15);border-color:rgba(245,101,101,0.2);color:#feb2b2;">❌ Error. Please try again.</div>`;
             });
-        }
-
-        function downloadWord(content) {
-            fetch('/download_word', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: content, filename: 'Nigat_AI_Response' })
-            })
-            .then(res => res.blob())
-            .then(blob => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'Nigat_AI_Response.docx';
-                a.click();
-                window.URL.revokeObjectURL(url);
-            })
-            .catch(err => alert('Download failed: ' + err.message));
-        }
-
-        document.getElementById('user-query').addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-        });
-
-        document.getElementById('user-query').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (!isStreaming) askAI();
-            }
-        });
-
-        function togglePlusMenu() {
-            document.getElementById('plusMenu').classList.toggle('show');
-        }
-        document.addEventListener('click', function(e) {
-            const menu = document.getElementById('plusMenu');
-            const btn = document.getElementById('plusBtn');
-            if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove('show');
-        });
-
-        function newChat() {
-            if (streamInterval) {
-                clearInterval(streamInterval);
-                streamInterval = null;
-                isStreaming = false;
-            }
-            document.getElementById('chat-history').innerHTML = '<p class="placeholder">Start a conversation... / ውይይት ይጀምሩ...</p>';
-            chatHistory = [];
-            document.getElementById('plusMenu').classList.remove('show');
-        }
-
-        function uploadPDF(e) {
-            const file = e.target.files[0];
-            if (!file) {
-                alert('No file selected.');
-                return;
-            }
-            if (!file.name.toLowerCase().endsWith('.pdf')) {
-                alert('Please select a PDF file.');
-                e.target.value = '';
-                return;
-            }
-            
-            if (file.size > 20 * 1024 * 1024) {
-                alert('⚠️ Large PDF detected (>20MB). The content will be summarized for better results.');
-            }
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            addMessage('user', '[Uploading PDF: ' + file.name + ']');
-            addMessage('ai', '⏳ Uploading and processing PDF... (Large files may be summarized)');
-            fetch('/upload', { method: 'POST', body: formData })
-            .then(response => {
-                if (response.redirected) {
-                    window.location.reload();
-                    return;
-                }
-                if (!response.ok) throw new Error('Upload failed');
-                return response.text();
-            })
-            .then(() => {
-                const container = document.getElementById('chat-history');
-                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
-                    container.removeChild(container.lastChild);
-                    chatHistory.pop();
-                }
-                addMessage('ai', '✅ PDF uploaded successfully! The content has been summarized. You can now ask questions about it.');
-            })
-            .catch(err => {
-                const container = document.getElementById('chat-history');
-                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
-                    container.removeChild(container.lastChild);
-                    chatHistory.pop();
-                }
-                addMessage('ai', '❌ PDF upload failed: ' + err.message);
-            });
-            document.getElementById('plusMenu').classList.remove('show');
-            e.target.value = '';
-        }
-
-        function uploadImage(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const formData = new FormData();
-            formData.append('image', file);
-            addMessage('user', '[Uploading Image: ' + file.name + ']');
-            addMessage('ai', '⏳ Processing image...');
-            fetch('/upload_image', { method: 'POST', body: formData })
-            .then(res => res.json())
-            .then(data => {
-                const container = document.getElementById('chat-history');
-                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
-                    container.removeChild(container.lastChild);
-                    chatHistory.pop();
-                }
-                addMessage('ai', data.error ? '❌ ' + data.error : '✅ Image uploaded successfully!');
-            })
-            .catch(err => {
-                const container = document.getElementById('chat-history');
-                if (container.lastChild && container.lastChild.classList.contains('msg') && container.lastChild.classList.contains('ai')) {
-                    container.removeChild(container.lastChild);
-                    chatHistory.pop();
-                }
-                addMessage('ai', '❌ Image upload failed: ' + err.message);
-            });
-            document.getElementById('plusMenu').classList.remove('show');
-            e.target.value = '';
-        }
-
-        function startVoice() {
-            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                alert('Voice input not supported. Use Chrome, Edge, or Safari.');
-                return;
-            }
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'am-ET';
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.onstart = function() {
-                document.getElementById('plusMenu').classList.remove('show');
-                const input = document.getElementById('user-query');
-                input.placeholder = '🎤 Listening...';
-            };
-            recognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript;
-                document.getElementById('user-query').value = transcript;
-                document.getElementById('user-query').placeholder = 'Ask anything...';
-                setTimeout(() => {
-                    if (!isStreaming) askAI();
-                }, 300);
-            };
-            recognition.onerror = function(e) {
-                document.getElementById('user-query').placeholder = 'Ask anything...';
-                if (e.error !== 'not-allowed') {
-                    alert('Voice error: ' + e.error + '. Please try again.');
-                }
-            };
-            recognition.onend = function() {
-                document.getElementById('user-query').placeholder = 'Ask anything...';
-            };
-            recognition.start();
-        }
-
-        function clearContext() {
-            if (confirm('Clear all uploaded context?')) {
-                fetch('/clear_context', { method: 'POST' })
-                .then(() => addMessage('ai', '✅ Context cleared.'));
-                document.getElementById('plusMenu').classList.remove('show');
-            }
         }
     </script>
+
 </body>
 </html>
