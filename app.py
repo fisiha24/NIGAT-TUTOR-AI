@@ -63,7 +63,7 @@ def detect_language(text):
         return 'amharic'
     return 'english'
 
-def summarize_for_context(text, max_chars=4000):
+def summarize_for_context(text, max_chars=3000):  # ቀንሷል
     if len(text) <= max_chars:
         return text
     first_part = text[:int(max_chars * 0.7)]
@@ -126,16 +126,16 @@ def get_ai_response(system_prompt, user_query):
             return "⚠️ No Groq API keys available. Please add at least one API key."
         
         client = Groq(api_key=key)
-        print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
+        print("🤖 Using Groq API (llama-3.1-8b-instant)...")  # ተቀይሯል
         
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_query}
             ],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",  # የተቀየረ ሞዴል
             temperature=0.05,
-            max_tokens=512,
+            max_tokens=256,  # ቀንሷል
             top_p=0.85,
         )
         
@@ -343,11 +343,11 @@ def upload_file():
             text = extract_pdf_text(filepath)
             
             if file_size > 30:
-                max_chars = 3000
-            elif file_size > 15:
                 max_chars = 2500
+            elif file_size > 15:
+                max_chars = 2000
             else:
-                max_chars = 4000
+                max_chars = 3000
             
             truncated_text = summarize_for_context(text, max_chars=max_chars)
             
@@ -415,15 +415,15 @@ def ask_ai():
     
     pdf_text = session.get('pdf_context', '')
     if pdf_text:
-        if len(pdf_text) > 3500:
-            pdf_text = pdf_text[:3500] + "... [truncated]"
+        if len(pdf_text) > 2500:  # ቀንሷል
+            pdf_text = pdf_text[:2500] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print(f"📄 Using PDF from session: {session.get('pdf_filename', 'unknown')}")
     
     elif uploaded_texts['pdf']:
         pdf_text = "\n".join(uploaded_texts['pdf'][-2:])
-        if len(pdf_text) > 3500:
-            pdf_text = pdf_text[:3500] + "... [truncated]"
+        if len(pdf_text) > 2500:
+            pdf_text = pdf_text[:2500] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print("📄 Using PDF from uploaded_texts")
     
