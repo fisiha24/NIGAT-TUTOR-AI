@@ -2,6 +2,7 @@ import os
 import json
 import re
 import uuid
+import hashlib
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -18,17 +19,17 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
 app.config['SECRET_KEY'] = 'mysecretkey'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB - አይቀየርም!
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# GROQ API - MULTIPLE KEYS (ONLY GROQ)
+# GROQ API
 # ================================================================
 GROQ_API_KEYS = []
-for i in range(1, 4):  # GROQ_API_KEY_1, GROQ_API_KEY_2, GROQ_API_KEY_3
+for i in range(1, 4):
     key = os.environ.get(f'GROQ_API_KEY_{i}', '')
     if key:
         GROQ_API_KEYS.append(key)
@@ -50,7 +51,183 @@ def get_next_groq_key():
 print(f"✅ Loaded {len(GROQ_API_KEYS)} Groq API keys")
 
 db = SQLAlchemy(app)
-uploaded_texts = {'pdf': [], 'images': []}
+
+# ================================================================
+# SMART CONTEXT MANAGEMENT
+# ================================================================
+
+class DocumentChunk:
+    """የPDF ክፍልፋዮችን ለማስተዳደር"""
+    def __init__(self, text, page_num, chunk_id):
+        self.text = text
+        self.page_num = page_num
+        self.chunk_id = chunk_id
+        self.keywords = self._extract_keywords(text)
+    
+    def _extract_keywords(self, text):
+        """ቁልፍ ቃላትን ከጽሑፉ ያውጣል"""
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+        return set(words[:50])
+
+class DocumentStore:
+    """የPDF ጽሑፎችን በማህደረ ትውስታ ውስጥ ያስቀምጣል"""
+    def __init__(self):
+        self.documents = {}  # session_id -> full_text
+        self.chunks = {}     # session_id -> list of DocumentChunk
+        self.chunk_size = 1000  # ፊደላት በአንድ ክፍል
+    
+    def store_document(self, session_id, text, filename):
+        """ሙሉ ጽሑፉን ያስቀምጣል እና በክፍል ይከፋፍላል"""
+        self.documents[session_id] = {
+            'text': text,
+            'filename': filename,
+            'length': len(text),
+            'pages': text.count('\n\n') + 1
+        }
+        
+        # ጽሑፉን በክፍል መከፋፈል
+        chunks = []
+        words = text.split()
+        for i in range(0, len(words), self.chunk_size):
+            chunk_text = ' '.join(words[i:i+self.chunk_size])
+            chunk_id = f"chunk_{i//self.chunk_size + 1}"
+            page_num = (i // (self.chunk_size * 5)) + 1  # ግምታዊ ገጽ
+            chunks.append(DocumentChunk(chunk_text, page_num, chunk_id))
+        
+        self.chunks[session_id] = chunks
+        print(f"📚 Stored {len(chunks)} chunks for session {session_id}")
+        return len(chunks)
+    
+    def get_relevant_chunks(self, session_id, query, top_k=3):
+        """ከጥያቄው ጋር የሚዛመዱ ክፍሎችን ያገኛል"""
+        if session_id not in self.chunks:
+            return []
+        
+        query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
+        if not query_words:
+            # ምንም ቁልፍ ቃል ከሌለ የመጀመሪያዎቹን ክፍሎች ይመልሳል
+            return self.chunks[session_id][:top_k]
+        
+        # የውጤት ውጤት አስላ
+        scored_chunks = []
+        for chunk in self.chunks[session_id]:
+            common = len(query_words & chunk.keywords)
+            score = common / max(len(query_words), 1)
+            if score > 0:
+                scored_chunks.append((score, chunk))
+        
+        scored_chunks.sort(key=lambda x: x[0], reverse=True)
+        return [chunk for _, chunk in scored_chunks[:top_k]]
+    
+    def get_full_text(self, session_id):
+        """ሙሉ ጽሑፉን ይመልሳል"""
+        if session_id in self.documents:
+            return self.documents[session_id]['text']
+        return None
+    
+    def clear(self, session_id):
+        """የአንድን ክፍለ ጊዜ መረጃ ያጸዳል"""
+        if session_id in self.documents:
+            del self.documents[session_id]
+        if session_id in self.chunks:
+            del self.chunks[session_id]
+
+# Global document store
+doc_store = DocumentStore()
+
+# ================================================================
+# SMART PROMPT SYSTEM
+# ================================================================
+
+class PromptManager:
+    """የተለያዩ ጥያቄዎችን ለማስተዳደር"""
+    
+    BASE_SYSTEM = "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke."
+    
+    PROMPTS = {
+        'daily_lesson': """
+=== DAILY LESSON PLAN TEMPLATE ===
+Generate a daily lesson plan using this format:
+
+# SCHOOL INFORMATION
+**School Name:** [SCHOOL_NAME]
+**Teacher Name:** [TEACHER_NAME]
+**Grade and Section:** [GRADE_AND_SECTION]
+**Subject:** [SUBJECT]
+**Date:** [DATE]
+**Unit:** [UNIT_NUMBER - UNIT_TITLE]
+**Lesson Topic:** [LESSON_TOPIC]
+**Page:** [PAGE]
+
+# LESSON OVERVIEW
+**Rationale:** [RATIONALE]
+**Pre-requisite Knowledge:** [PREREQUISITES]
+**Competencies:** [LIST]
+
+# LESSON STAGES (TABLE)
+| Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment |
+
+# SUPPORT FOR LEARNERS
+| Category | Support Strategies |
+
+# APPROVALS (TABLE)
+| Role | Name | Signature | Date |
+
+# TEACHER'S SELF-ASSESSMENT
+[SELF_ASSESSMENT]
+""",
+        
+        'annual_plan': """
+=== ANNUAL LESSON PLAN TEMPLATE ===
+Generate an annual lesson plan using this format:
+
+# ANNUAL LESSON PLAN
+**School Name:** [SCHOOL_NAME]
+**Teacher Name:** [TEACHER_NAME]
+**Subject:** [SUBJECT]
+**Grade:** [GRADE]
+**Academic Year:** [YEAR]
+
+| Month | Week | Topics | Objectives | Methodology | Evaluation |
+""",
+        
+        'exam': """
+=== EXAM GENERATOR ===
+Generate exam questions based on the provided content.
+Include multiple choice, true/false, and short answer questions.
+"""
+    }
+    
+    @staticmethod
+    def get_prompt(prompt_type):
+        """የሚፈለገውን ፕሮምፕት ይመልሳል"""
+        return PromptManager.PROMPTS.get(prompt_type, "")
+    
+    @staticmethod
+    def detect_prompt_type(query):
+        """ከጥያቄው ውስጥ የፕሮምፕት አይነት ይለያል"""
+        query_lower = query.lower()
+        if any(word in query_lower for word in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
+            return 'daily_lesson'
+        elif any(word in query_lower for word in ['annual', 'ዓመታዊ', 'yearly']):
+            return 'annual_plan'
+        elif any(word in query_lower for word in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
+            return 'exam'
+        return 'general'
+
+# ================================================================
+# TOKEN COUNTER (ለGroq ገደብ ለመከታተል)
+# ================================================================
+def estimate_tokens(text):
+    """ግምታዊ የቶከን ብዛት ያሰላል"""
+    return len(text) // 4  # ሞቃታማ ግምት
+
+def truncate_to_limit(text, max_tokens=5000):
+    """ጽሑፉን ወደተፈለገው ገደብ ያሳጥራል"""
+    if estimate_tokens(text) <= max_tokens:
+        return text
+    chars = max_tokens * 4
+    return text[:chars] + "\n\n[...truncated...]"
 
 # ================================================================
 # HELPER FUNCTIONS
@@ -63,13 +240,6 @@ def detect_language(text):
         return 'amharic'
     return 'english'
 
-def summarize_for_context(text, max_chars=3000):  # ቀንሷል
-    if len(text) <= max_chars:
-        return text
-    first_part = text[:int(max_chars * 0.7)]
-    last_part = text[-int(max_chars * 0.3):]
-    return f"{first_part}\n\n[...truncated...]\n\n{last_part}"
-
 def extract_pdf_text(filepath):
     try:
         import pdfplumber
@@ -78,7 +248,7 @@ def extract_pdf_text(filepath):
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
-                    text += page_text + "\n"
+                    text += page_text + "\n\n"
         return text if text else "No text found in PDF."
     except Exception as e:
         return f"PDF extraction error: {str(e)}"
@@ -96,46 +266,51 @@ def remove_duplicate_sentences(text):
         normalized = sentence.lower()
         if normalized in seen:
             continue
-        if len(sentence) < 5 or sentence in ['', ' ', '...']:
+        if len(sentence) < 5:
             continue
         seen.add(normalized)
         unique_sentences.append(sentence)
-    result = ' '.join(unique_sentences)
-    if len(result) < 20 and len(text) > 50:
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        unique = []
-        seen = set()
-        for s in sentences:
-            s = s.strip()
-            if s and s not in seen:
-                seen.add(s)
-                unique.append(s)
-                if len(unique) >= 3:
-                    break
-        if unique:
-            result = ' '.join(unique)
-    return result
+    return ' '.join(unique_sentences)
 
-def get_ai_response(system_prompt, user_query):
-    """Get response from Groq API using multiple keys (round-robin)"""
+# ================================================================
+# AI RESPONSE FUNCTION (የተሻሻለ)
+# ================================================================
+def get_ai_response(system_prompt, user_query, context):
+    """Smart context management ያለው AI ጥሪ"""
     
     try:
         from groq import Groq
         key = get_next_groq_key()
         if key is None:
-            return "⚠️ No Groq API keys available. Please add at least one API key."
+            return "⚠️ No Groq API keys available."
+        
+        # 1. የፕሮምፕት አይነት መለየት
+        prompt_type = PromptManager.detect_prompt_type(user_query)
+        prompt_template = PromptManager.get_prompt(prompt_type)
+        
+        # 2. የቶከን ገደብ ማስላት
+        full_prompt = f"{system_prompt}\n\n{prompt_template}\n\nContext:\n{context}\n\nUser: {user_query}"
+        estimated_tokens = estimate_tokens(full_prompt)
+        
+        print(f"📊 Estimated tokens: {estimated_tokens}")
+        
+        # 3. ከገደብ በላይ ከሆነ አሳጥር
+        if estimated_tokens > 5000:
+            print("⚠️ Reducing context to fit token limit...")
+            context = truncate_to_limit(context, 3000)
+            full_prompt = f"{system_prompt}\n\n{prompt_template}\n\nContext:\n{context}\n\nUser: {user_query}"
         
         client = Groq(api_key=key)
-        print("🤖 Using Groq API (llama-3.1-8b-instant)...")  # ተቀይሯል
+        print(f"🤖 Using Groq API ({prompt_type} prompt)...")
         
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
+                {"role": "user", "content": full_prompt}
             ],
-            model="llama-3.1-8b-instant",  # የተቀየረ ሞዴል
+            model="llama-3.3-70b-versatile",
             temperature=0.05,
-            max_tokens=256,  # ቀንሷል
+            max_tokens=1024,
             top_p=0.85,
         )
         
@@ -322,7 +497,7 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES
+# UPLOAD ROUTES (አይቀየርም - 500MB ነው)
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -342,29 +517,26 @@ def upload_file():
             file_size = os.path.getsize(filepath) / (1024 * 1024)
             text = extract_pdf_text(filepath)
             
-            if file_size > 30:
-                max_chars = 2500
-            elif file_size > 15:
-                max_chars = 2000
-            else:
-                max_chars = 3000
-            
-            truncated_text = summarize_for_context(text, max_chars=max_chars)
-            
+            # ሙሉ ጽሑፉን በDocumentStore ውስጥ ማስቀመጥ
             if 'session_id' not in session:
                 session['session_id'] = str(uuid.uuid4())
             
-            session['pdf_context'] = truncated_text
+            session_id = session['session_id']
+            
+            # ሙሉ ጽሑፉን በክፍል ማስቀመጥ
+            num_chunks = doc_store.store_document(session_id, text, filename)
+            
+            # ለጊዜው አጭር ማስታወሻ በsession ውስጥ ማስቀመጥ
             session['pdf_filename'] = filename
             session['pdf_size'] = file_size
-            
-            uploaded_texts['pdf'] = []
-            uploaded_texts['pdf'].append(truncated_text)
+            session['pdf_chunks'] = num_chunks
             
             return jsonify({
                 'success': True, 
-                'message': f'PDF uploaded successfully! ({file_size:.1f}MB)',
-                'session_id': session.get('session_id')
+                'message': f'PDF uploaded successfully! ({file_size:.1f}MB, {num_chunks} chunks)',
+                'session_id': session_id,
+                'chunks': num_chunks,
+                'pages': text.count('\n\n') + 1
             }), 200
             
         except Exception as e:
@@ -384,22 +556,23 @@ def upload_image():
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
-        uploaded_texts['images'].append(f"Image uploaded: {filename}")
         return jsonify({'message': 'Image uploaded successfully'}), 200
     else:
         return jsonify({'error': 'Unsupported file type'}), 400
 
 @app.route('/clear_context', methods=['POST'])
 def clear_context():
-    uploaded_texts['pdf'] = []
-    uploaded_texts['images'] = []
+    session_id = session.get('session_id')
+    if session_id:
+        doc_store.clear(session_id)
     session.pop('pdf_context', None)
     session.pop('pdf_filename', None)
     session.pop('pdf_size', None)
+    session.pop('pdf_chunks', None)
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE
+# AI CHAT ROUTE (የተሻሻለ - Smart Context)
 # ================================================================
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
@@ -410,195 +583,51 @@ def ask_ai():
     
     query_lang = detect_language(user_query)
     print(f"🔍 Detected language: {query_lang}")
+    print(f"📝 User query: {user_query[:100]}...")
     
+    session_id = session.get('session_id')
+    
+    # 1. ከጥያቄው ጋር የሚዛመዱ ክፍሎችን ማግኘት
+    relevant_chunks = []
+    if session_id:
+        relevant_chunks = doc_store.get_relevant_chunks(session_id, user_query, top_k=3)
+        print(f"📚 Found {len(relevant_chunks)} relevant chunks")
+    
+    # 2. ተዛማጅ ጽሑፍ መገንባት
     context = ""
+    if relevant_chunks:
+        for chunk in relevant_chunks:
+            context += f"\n--- {chunk.chunk_id} (Page ~{chunk.page_num}) ---\n{chunk.text}\n"
+    elif session_id:
+        # ምንም ተዛማጅ ክፍል ካልተገኘ ሙሉውን ጽሑፍ አሳጥረው ይላኩ
+        full_text = doc_store.get_full_text(session_id)
+        if full_text:
+            context = truncate_to_limit(full_text, 3000)
+            print("📄 Using full text (truncated)")
+    else:
+        context = "No document uploaded."
     
-    pdf_text = session.get('pdf_context', '')
-    if pdf_text:
-        if len(pdf_text) > 2500:  # ቀንሷል
-            pdf_text = pdf_text[:2500] + "... [truncated]"
-        context += "PDF Content:\n" + pdf_text + "\n"
-        print(f"📄 Using PDF from session: {session.get('pdf_filename', 'unknown')}")
-    
-    elif uploaded_texts['pdf']:
-        pdf_text = "\n".join(uploaded_texts['pdf'][-2:])
-        if len(pdf_text) > 2500:
-            pdf_text = pdf_text[:2500] + "... [truncated]"
-        context += "PDF Content:\n" + pdf_text + "\n"
-        print("📄 Using PDF from uploaded_texts")
-    
-    if uploaded_texts['images']:
-        img_text = "\n".join(uploaded_texts['images'][-2:])
-        context += "Image Uploaded:\n" + img_text + "\n"
-    
+    # 3. የቋንቋ መመሪያ
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
         language_instruction = "You MUST respond in English."
     
+    # 4. አጭር System Prompt
     system_prompt = (
-        "You are 'Nigat AI Tutor'. Your creator is Teacher Fisaha Melke.\n\n"
-        
-        "=== LANGUAGE RULE ===\n"
-        f"{language_instruction}\n"
-        "Do NOT switch languages. The response MUST be in the same language as the user's question.\n\n"
-        
-        "=== CONTEXT ===\n"
-        f"{context}\n\n"
-        
+        "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke.\n\n"
+        f"=== LANGUAGE RULE ===\n{language_instruction}\n"
+        "Do NOT switch languages.\n\n"
         "=== ABOUT THE CREATOR ===\n"
-        "When asked about the creator, respond with the following information:\n"
-        "English:\n"
-        "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools, where I have been dedicated to helping students learn through clear explanations, practical examples, and student-centered teaching methods.\n\n"
-        "In addition to teaching, I hold a Certificate in Video Editing, which has strengthened my ability to create engaging digital educational content. I believe that combining education with technology creates more effective and enjoyable learning experiences.\n\n"
-        "I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students. The platform aims to provide AI-powered learning assistance, lesson plan generation, exam and worksheet creation, PDF-based learning support, educational content generation, and intelligent tutoring in both Amharic and English.\n\n"
-        "My vision is to make quality education more accessible by using modern technology to reduce teachers' workload, improve students' learning outcomes, and promote innovative digital learning across Ethiopia.\n\n"
-        "I am a hardworking, self-motivated, and lifelong learner who enjoys solving problems and continuously improving my skills. I am committed to contributing to the future of education by developing practical and innovative educational technologies that benefit teachers, students, and schools.\n\n"
-        "Amharic (አማርኛ):\n"
-        "ስሜ ፍስሃ መልኬ ነው። ከአምቦ ዩኒቨርሲቲ በባዮሎጂ (Biology) ትምህርት ዘርፍ በ2016 ዓ.ም. ተመርቄያለሁ። ከሁለት ዓመት በላይ በግል ትምህርት ቤቶች ውስጥ የማስተማር ልምድ አለኝ፣ በተለይም ተማሪዎችን በቀላል፣ በግልጽ እና በተግባራዊ መንገድ ማስተማር ላይ ትኩረት አደርጋለሁ።\n\n"
-        "ከማስተማር ሙያዬ በተጨማሪ በቪዲዮ ኤዲቲንግ (Video Editing) ዘርፍ የሙያ ሰርቲፊኬት አለኝ። ቴክኖሎጂን ከትምህርት ጋር በማጣመር የተማሪዎችን የመማር ልምድ ለማሻሻል እጥራለሁ።\n\n"
-        "በአሁኑ ጊዜ የኢትዮጵያ መምህራንና ተማሪዎችን ለማገዝ Nigat Tutor AI የተባለ ዘመናዊ የትምህርት መድረክ እያዘጋጀሁ ነው። ይህ መድረክ የትምህርት እቅድ ማዘጋጀት፣ ጥያቄዎችን ማመንጨት፣ ፈተና ማዘጋጀት፣ ከPDF መጽሐፍት መረጃ ማውጣት፣ እንዲሁም በአማርኛና በእንግሊዝኛ የAI እገዛ መስጠት የሚችል ነው።\n\n"
-        "የእኔ ዓላማ ቴክኖሎጂን በመጠቀም የትምህርት ጥራትን ማሻሻል፣ የመምህራንን የስራ ጫና ማቃለል፣ እና ተማሪዎች ዘመናዊና ተደራሽ የመማሪያ መሳሪያዎችን እንዲጠቀሙ ማድረግ ነው።\n\n"
-        "ታታሪ፣ ለመማር ፈቃደኛ፣ ችግር ፈቺ እና ውጤት ተኮር ሰው ነኝ። በቀጣይም በትምህርትና በቴክኖሎጂ ዘርፍ የሚጠቅሙ ፈጠራዎችን ለማበርከት እሰራለሁ።\n\n"
-        
-        "=== FIXED RESPONSES ===\n"
-        "1. If asked about speaking Amharic:\n"
-        "   - English: 'Yes, I can speak Amharic fluently. I can help you with any question.'\n"
-        "   - Amharic: 'አዎ፣ እኔ አማርኛን በደንብ እናገራለሁ። በማንኛውም ጥያቄ ልረዳህ እችላለሁ።'\n\n"
-        
-        "2. If asked 'Who created you?':\n"
-        "   - Amharic: 'እኔን የሰራኝ መምህር ፍስሃ መልኬ ይባላል። እሱ የሁለት ዓመት የመማር እና ማስተማር ልምድ አለው። በቪዲዮ ኢዲቲንግ ዘርፍም ሰርቲፊኬት አለው። ለተማሪዎች በቤት ለቤት ትምህርት እና የጥናት ድጋፍ ይሰጣል። ማንኛውም መረጃ ወይም ግንኙነት ለማግኘት በሚከተሉት ስልክ ቁጥሮች መደወል ይቻላል፦ 0919 704 062 / 0978 127 213 አዲስ አበባ ከተማ ውስጥ ይገኛል።'\n"
-        "   - English: 'I was created by Teacher Fisaha Melke. He has two years of experience in teaching and learning activities. He also holds a certificate in video editing. He provides home-to-home tutoring and academic support for students. For more information or contact, you can call: 0919 704 062 / 0978 127 213. He is based in Addis Ababa.'\n\n"
-        
-        "=== CRITICAL: TABLE FORMATTING RULES ===\n"
-        "You MUST format ALL tables with proper line breaks and Markdown syntax.\n"
-        "Each row of a table MUST be on a NEW LINE.\n"
-        "Example of CORRECT table format:\n"
-        "| Column 1 | Column 2 | Column 3 |\n"
-        "|----------|----------|----------|\n"
-        "| Data 1   | Data 2   | Data 3   |\n"
-        "| Data 4   | Data 5   | Data 6   |\n\n"
-        "REMEMBER: Every table row must be on its own separate line.\n\n"
-        
-        "=== DAILY LESSON PLAN TEMPLATE ===\n"
-        "3. When asked to generate a DAILY LESSON PLAN, use this EXACT TEMPLATE with placeholders and TABLES:\n\n"
-        "# SCHOOL INFORMATION\n"
-        "**School Name:** [SCHOOL_NAME]\n"
-        "**Teacher Name:** [TEACHER_NAME]\n"
-        "**Grade and Section:** [GRADE_AND_SECTION]\n"
-        "**Subject:** [SUBJECT]\n"
-        "**Date:** [DATE]\n"
-        "**Unit:** [UNIT_NUMBER - UNIT_TITLE]\n"
-        "**Lesson Topic:** [LESSON_TOPIC]\n"
-        "**Page:** [PAGE]\n\n"
-        "# LESSON OVERVIEW\n"
-        "**Rationale of the topic:** [RATIONALE]\n"
-        "**Pre-requisite Knowledge:** [PREREQUISITES]\n"
-        "**Competencies (Learning Objectives):**\n"
-        "- [COMPETENCY_1]\n"
-        "- [COMPETENCY_2]\n"
-        "- [COMPETENCY_3]\n\n"
-        "# LESSON STAGES (TABLE)\n"
-        "| Stage | Time | Learning Contents | Page | Teacher Activities | Student Activities | Teaching Methodology | Learning Assessment | Teaching Aids | Remark |\n"
-        "|-------|------|-------------------|------|-------------------|---------------------|----------------------|---------------------|---------------|--------|\n"
-        "| Starter / Introduction | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n"
-        "| Main Activities | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n"
-        "| Concluding Activities | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n\n"
-        "# SUPPORT FOR LEARNERS WITH SPECIAL NEEDS (TABLE)\n"
-        "| Category | Support Strategies |\n"
-        "|----------|-------------------|\n"
-        "| Slow-learners | [SLOW_LEARNERS_STRATEGIES] |\n"
-        "| Medium-learners | [MEDIUM_LEARNERS_STRATEGIES] |\n"
-        "| Fast-learners | [FAST_LEARNERS_STRATEGIES] |\n\n"
-        "# APPROVALS (TABLE)\n"
-        "| Role | Name | Signature | Date |\n"
-        "|------|------|-----------|------|\n"
-        "| Teacher | [TEACHER_NAME] | [TEACHER_SIGNATURE] | [DATE] |\n"
-        "| Department Head | [DEPT_HEAD_NAME] | [DEPT_HEAD_SIGNATURE] | [DATE] |\n"
-        "| Vice Principal | [VP_NAME] | [VP_SIGNATURE] | [DATE] |\n\n"
-        "# POST-LESSON TEACHER'S SELF-ASSESSMENT\n"
-        "[SELF_ASSESSMENT]\n\n"
-        
-        "=== ANNUAL LESSON PLAN TEMPLATE ===\n"
-        "4. When asked to generate an ANNUAL LESSON PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
-        "# ANNUAL LESSON PLAN\n"
-        "**School Name:** [SCHOOL_NAME]\n"
-        "**Teacher Name:** [TEACHER_NAME]\n"
-        "**Subject:** [SUBJECT]\n"
-        "**Grade and Section:** [GRADE_AND_SECTION]\n"
-        "**Academic Year:** [YEAR]\n"
-        "**Total Working Days:** [TOTAL_DAYS]\n"
-        "**1st Semester Days:** [SEM1_DAYS]\n"
-        "**2nd Semester Days:** [SEM2_DAYS]\n\n"
-        "**Unit [UNIT_NUMBER]: [UNIT_TITLE]**\n"
-        "**General Objectives:** [UNIT_OBJECTIVES]\n\n"
-        "| Month | Week | Period | Date Range | Page | Topics | Objectives | Methodology | Teaching Aids | Evaluation |\n"
-        "|-------|------|--------|------------|------|--------|------------|-------------|---------------|------------|\n"
-        "| [MONTH_1] | [WEEK_1] | [PERIOD_1] | [DATE_RANGE_1] | [PAGE_1] | [TOPICS_1] | [OBJECTIVES_1] | [METHOD_1] | [AIDS_1] | [EVALUATION_1] |\n"
-        "| [MONTH_2] | [WEEK_2] | [PERIOD_2] | [DATE_RANGE_2] | [PAGE_2] | [TOPICS_2] | [OBJECTIVES_2] | [METHOD_2] | [AIDS_2] | [EVALUATION_2] |\n\n"
-        "**Prepared By:** [PREPARER_NAME]\n"
-        "**Department Head:** [DEPT_HEAD_NAME]\n"
-        "**Director:** [DIRECTOR_NAME]\n"
-        "**Signatures & Dates:** ...\n\n"
-        
-        "=== LABORATORY PLAN TEMPLATE ===\n"
-        "5. When asked to generate a LABORATORY PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
-        "# LABORATORY ANNUAL PLAN\n"
-        "**School Name:** [SCHOOL_NAME]\n"
-        "**Teacher Name:** [TEACHER_NAME]\n"
-        "**Subject:** [SUBJECT]\n"
-        "**Grade:** [GRADE]\n"
-        "**Academic Year:** [YEAR]\n\n"
-        "| Experiment No. | Title | Apparatus | Chemicals | Unit | Page | Month | Date |\n"
-        "|---------------|-------|-----------|-----------|------|------|-------|------|\n"
-        "| [EXP_1] | [TITLE_1] | [APPARATUS_1] | [CHEMICALS_1] | [UNIT_1] | [PAGE_1] | [MONTH_1] | [DATE_1] |\n"
-        "| [EXP_2] | [TITLE_2] | [APPARATUS_2] | [CHEMICALS_2] | [UNIT_2] | [PAGE_2] | [MONTH_2] | [DATE_2] |\n\n"
-        "**Prepared By:** [PREPARER_NAME]\n"
-        "**Approved By:** [APPROVER_NAME]\n"
-        "**Dates:** ...\n\n"
-        
-        "=== PEACE CLUB PLAN TEMPLATE ===\n"
-        "6. When asked to generate a PEACE CLUB PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
-        "# PEACE CLUB ANNUAL PLAN\n"
-        "**School Name:** [SCHOOL_NAME]\n"
-        "**District:** [DISTRICT]\n"
-        "**Woreda:** [WOREDA]\n"
-        "**School Level:** [SCHOOL_LEVEL]\n"
-        "**Club Name:** [CLUB_NAME]\n"
-        "**Teacher Name:** [TEACHER_NAME]\n"
-        "**Secretary Name:** [SECRETARY_NAME]\n"
-        "**Year:** [YEAR]\n"
-        "**Month:** [MONTH]\n\n"
-        "**Vision:** [VISION]\n"
-        "**Mission:** [MISSION]\n"
-        "**Opportunities & Strengths:** [OPPORTUNITIES]\n"
-        "**Challenges & Weaknesses:** [CHALLENGES]\n"
-        "**Solutions:** [SOLUTIONS]\n\n"
-        "| # | Activity | Hamle | Nehase | Meskerem | Tikimt | Hidar | Tahsas | Tir | Yekatit | Megabit | Miazia | Ginbot | Sene |\n"
-        "|---|----------|-------|--------|----------|--------|-------|--------|-----|---------|---------|--------|--------|------|\n"
-        "| 1 | [ACTIVITY_1] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n"
-        "| 2 | [ACTIVITY_2] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n\n"
-        "**Student Members:** [LIST_OF_STUDENTS]\n"
-        "**Teacher Members:** [LIST_OF_TEACHERS]\n\n"
-        
+        "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
         "=== ACCURACY RULE ===\n"
-        "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.' in the user's language.\n\n"
-        
+        "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.'\n\n"
         "=== AMHARIC SPELLING ===\n"
-        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
-        
-        "=== FINAL REMINDER ===\n"
-        "1. TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
-        "2. For Amharic responses, use correct Amharic spelling and script.\n"
-        "3. If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic.\n"
-        "4. NEVER repeat sentences. Write each sentence only ONCE.\n"
-        "5. Write 3-5 sentences for general questions.\n"
-        "6. When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
-        "7. Do NOT change the format or remove any sections.\n"
-        "8. The user should fill in the placeholders [LIKE_THIS] with their own information."
+        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n"
     )
     
-    answer = get_ai_response(system_prompt, user_query)
+    # 5. AI መልስ ማግኘት
+    answer = get_ai_response(system_prompt, user_query, context)
     
     if answer:
         answer = remove_duplicate_sentences(answer)
