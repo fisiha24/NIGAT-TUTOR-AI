@@ -21,7 +21,7 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
 app.config['SECRET_KEY'] = 'mysecretkey'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # FAISS storage directory
@@ -33,7 +33,7 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# DATABASE INITIALIZATION
+# DATABASE INITIALIZATION - ከሞዴሎቹ በፊት ✅
 # ================================================================
 db = SQLAlchemy(app)
 
@@ -317,9 +317,9 @@ class EnterpriseRAG:
         self.doc_metadata = {}
         self.chunk_texts = {}
         self.faiss_indexes = {}
-        self.chunk_size = 300  # ቀንሷል
-        self.overlap = 50      # ቀንሷል
-        self.max_chunks = 500  # ከፍተኛ የክፍል ብዛት
+        self.chunk_size = 300      # ቀንሷል
+        self.overlap = 50          # ቀንሷል
+        self.max_chunks = 500      # ከፍተኛ የክፍል ብዛት
     
     def get_index_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}.faiss")
@@ -500,7 +500,7 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS
+# MODELS - ከDB በኋላ ✅
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -690,8 +690,6 @@ def upload_file():
             file.save(filepath)
             
             file_size = os.path.getsize(filepath) / (1024 * 1024)
-            
-            # Limit to 50 pages max for memory
             text, pages = extract_pdf_text_streaming(filepath)
             
             if not text or text.startswith("PDF extraction error"):
