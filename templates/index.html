@@ -29,23 +29,648 @@
     SCRIPTS & STYLES
     ============================================================ -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <style>
+        /* ============================================================
+           GLOBAL STYLES - BEAUTIFUL GRADIENT BACKGROUND
+           ============================================================ */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            background-attachment: fixed;
+        }
+
+        /* ============================================================
+           NAVIGATION
+           ============================================================ */
+        nav {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 12px 20px;
+            border-radius: 50px;
+            max-width: 750px;
+            margin: 0 auto 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            flex-wrap: wrap;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        nav a {
+            text-decoration: none;
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+            padding: 8px 18px;
+            border-radius: 30px;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        nav a:hover {
+            background: rgba(118, 75, 162, 0.6);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        nav a.active {
+            background: rgba(118, 75, 162, 0.5);
+            color: white;
+        }
+
+        /* ============================================================
+           MAIN CONTAINER
+           ============================================================ */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 15px;
+        }
+
+        /* ============================================================
+           CHAT BOX
+           ============================================================ */
+        .chat-box {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 30px 35px 25px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .chat-box h2 {
+            color: white;
+            font-size: 30px;
+            margin-bottom: 5px;
+            text-align: center;
+            font-weight: 700;
+            text-shadow: 0 2px 20px rgba(118, 75, 162, 0.3);
+        }
+
+        .chat-box h2 span {
+            background: linear-gradient(135deg, #a78bfa, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .chat-sub {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 25px;
+            font-size: 15px;
+        }
+
+        /* ============================================================
+           CHAT HISTORY
+           ============================================================ */
+        .chat-history {
+            height: 380px;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 16px;
+            margin-bottom: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .chat-history::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-history::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        .chat-history::-webkit-scrollbar-thumb {
+            background: rgba(118, 75, 162, 0.5);
+            border-radius: 10px;
+        }
+
+        .chat-history .placeholder {
+            color: rgba(255, 255, 255, 0.35);
+            text-align: center;
+            padding: 50px 0;
+            font-size: 17px;
+        }
+
+        /* ============================================================
+           MESSAGES
+           ============================================================ */
+        .msg {
+            margin-bottom: 14px;
+            padding: 14px 20px;
+            border-radius: 16px;
+            max-width: 88%;
+            word-wrap: break-word;
+            line-height: 1.7;
+            font-size: 15px;
+        }
+
+        .msg.user {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+            box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
+        }
+
+        .msg.ai {
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.92);
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        /* ============================================================
+           TABLE STYLES
+           ============================================================ */
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            margin: 15px 0;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .markdown-table {
+            width: 100%;
+            min-width: 750px;
+            border-collapse: collapse;
+            font-size: 13px;
+            display: table;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .markdown-table th,
+        .markdown-table td {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 14px;
+            text-align: left;
+            vertical-align: top;
+            word-wrap: break-word;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .markdown-table th {
+            background: rgba(118, 75, 162, 0.4);
+            color: white;
+            font-weight: bold;
+        }
+
+        .markdown-table tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .markdown-table tr:hover {
+            background: rgba(118, 75, 162, 0.15);
+        }
+
+        /* ============================================================
+           DOWNLOAD BUTTON
+           ============================================================ */
+        .btn-download {
+            display: inline-block;
+            margin-top: 12px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-download:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        /* ============================================================
+           CHAT INPUT
+           ============================================================ */
+        .chat-input {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .chat-input textarea {
+            width: 100%;
+            padding: 14px 20px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            font-size: 15px;
+            resize: none;
+            outline: none;
+            transition: all 0.3s ease;
+            font-family: inherit;
+            min-height: 55px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.06);
+            color: white;
+        }
+
+        .chat-input textarea::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .chat-input textarea:focus {
+            border-color: rgba(118, 75, 162, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .chat-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .chat-actions button {
+            border: none;
+            padding: 11px 20px;
+            border-radius: 30px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+        }
+
+        .btn-purple {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: white;
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
+        }
+
+        .btn-purple:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 30px rgba(124, 58, 237, 0.5);
+        }
+
+        .btn-plus {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 22px;
+            font-weight: bold;
+            padding: 8px 16px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-plus:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: rotate(90deg);
+        }
+
+        .btn-microphone {
+            background: rgba(239, 68, 68, 0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 50%;
+            font-size: 18px;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-microphone:hover {
+            background: rgba(239, 68, 68, 0.9);
+            transform: scale(1.05);
+        }
+
+        /* ============================================================
+           PLUS MENU
+           ============================================================ */
+        .plus-menu {
+            display: none;
+            background: rgba(30, 27, 60, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+            padding: 8px 0;
+            width: 260px;
+            position: absolute;
+            bottom: 75px;
+            right: 20px;
+            z-index: 100;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .plus-menu.show {
+            display: block;
+        }
+
+        .plus-menu-item {
+            padding: 12px 22px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .plus-menu-item:hover {
+            background: rgba(118, 75, 162, 0.3);
+            color: white;
+        }
+
+        .plus-menu-item i {
+            width: 22px;
+            color: #a78bfa;
+            font-size: 16px;
+        }
+
+        /* ============================================================
+           COURSES SECTION
+           ============================================================ */
+        .courses-section {
+            max-width: 1100px;
+            margin: 45px auto 20px;
+            padding: 0 15px;
+        }
+
+        .courses-section h2 {
+            text-align: center;
+            color: white;
+            font-size: 28px;
+            margin-bottom: 25px;
+            font-weight: 700;
+            text-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .courses-section h2 span {
+            background: linear-gradient(135deg, #a78bfa, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .courses-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 20px;
+        }
+
+        .course-link {
+            text-decoration: none;
+        }
+
+        .course-item {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 24px 22px;
+            border-radius: 16px;
+            transition: all 0.3s ease;
+            height: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-top: 4px solid #7c3aed;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .course-item:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .course-item h3 {
+            color: white;
+            margin-bottom: 8px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .course-item p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* ============================================================
+           RESPONSIVE
+           ============================================================ */
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+            
+            nav {
+                gap: 6px;
+                padding: 10px 12px;
+                border-radius: 30px;
+            }
+            
+            nav a {
+                font-size: 11px;
+                padding: 5px 10px;
+            }
+            
+            .chat-box {
+                padding: 18px 16px 16px;
+                border-radius: 18px;
+            }
+            
+            .chat-box h2 {
+                font-size: 22px;
+            }
+            
+            .chat-history {
+                height: 280px;
+                padding: 14px;
+            }
+            
+            .msg {
+                max-width: 95%;
+                padding: 10px 14px;
+                font-size: 14px;
+            }
+            
+            .markdown-table {
+                font-size: 11px;
+                min-width: 600px;
+            }
+            
+            .markdown-table th,
+            .markdown-table td {
+                padding: 6px 10px;
+            }
+            
+            .chat-actions button {
+                padding: 8px 14px;
+                font-size: 13px;
+            }
+            
+            .btn-microphone,
+            .btn-plus {
+                padding: 6px 12px;
+                font-size: 16px;
+            }
+            
+            .plus-menu {
+                width: 220px;
+                right: 10px;
+                bottom: 65px;
+            }
+            
+            .plus-menu-item {
+                font-size: 13px;
+                padding: 10px 16px;
+            }
+            
+            .courses-grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 14px;
+            }
+            
+            .course-item {
+                padding: 18px 16px;
+            }
+            
+            .course-item h3 {
+                font-size: 16px;
+            }
+            
+            .course-item p {
+                font-size: 13px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            nav {
+                gap: 4px;
+                padding: 8px 10px;
+                border-radius: 20px;
+            }
+            
+            nav a {
+                font-size: 10px;
+                padding: 4px 8px;
+            }
+            
+            .chat-box {
+                padding: 12px 10px;
+                border-radius: 14px;
+            }
+            
+            .chat-box h2 {
+                font-size: 18px;
+            }
+            
+            .chat-sub {
+                font-size: 12px;
+            }
+            
+            .chat-history {
+                height: 230px;
+                padding: 10px;
+            }
+            
+            .msg {
+                font-size: 13px;
+                padding: 8px 12px;
+                max-width: 98%;
+            }
+            
+            .chat-input textarea {
+                font-size: 14px;
+                padding: 10px 14px;
+                min-height: 40px;
+            }
+            
+            .markdown-table {
+                font-size: 10px;
+                min-width: 450px;
+            }
+            
+            .markdown-table th,
+            .markdown-table td {
+                padding: 4px 6px;
+            }
+            
+            .chat-actions button {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            
+            .btn-microphone,
+            .btn-plus {
+                padding: 4px 10px;
+                font-size: 14px;
+            }
+            
+            .plus-menu {
+                width: 190px;
+                right: 5px;
+                bottom: 55px;
+            }
+            
+            .plus-menu-item {
+                font-size: 12px;
+                padding: 8px 14px;
+            }
+            
+            .courses-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+            
+            .course-item {
+                padding: 14px 12px;
+            }
+            
+            .course-item h3 {
+                font-size: 14px;
+            }
+            
+            .course-item p {
+                font-size: 12px;
+            }
+            
+            .btn-download {
+                font-size: 11px;
+                padding: 4px 12px;
+            }
+        }
+    </style>
 </head>
 <body>
+    <!-- ============================================================
+    NAVIGATION - WITHOUT Upload and Lesson Plan
+    ============================================================ -->
     <nav>
-        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('home') }}" class="active">Home</a>
         <a href="{{ url_for('about') }}">About Us</a>
         <a href="{{ url_for('contact') }}">Contact</a>
         <a href="{{ url_for('register') }}">Register</a>
-        <a href="{{ url_for('upload_file') }}">Upload</a>
-        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
-        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
     </nav>
 
+    <!-- ============================================================
+    MAIN CHAT SECTION
+    ============================================================ -->
     <section class="main-container">
         <div class="chat-box">
-            <h2>Nigat Tutor AI</h2>
+            <h2>🤖 <span>Nigat Tutor AI</span></h2>
             <p class="chat-sub">Ask me anything. / ማንኛውንም ጥያቄ ይጠይቁኝ።</p>
 
             <div class="chat-history" id="chat-history">
@@ -55,10 +680,18 @@
             <div class="chat-input">
                 <textarea id="user-query" placeholder="Ask anything..." rows="1"></textarea>
                 <div class="chat-actions">
-                    <button onclick="startVoice()" class="btn-microphone" title="Voice Input / ድምጽ አስገባ"><i class="fas fa-microphone"></i></button>
+                    <button onclick="startVoice()" class="btn-microphone" title="Voice Input / ድምጽ አስገባ">
+                        <i class="fas fa-microphone"></i>
+                    </button>
                     <button onclick="togglePlusMenu()" class="btn-plus" id="plusBtn">+</button>
-                    <button onclick="askAI()" class="btn-purple"><i class="fas fa-paper-plane"></i> Send</button>
+                    <button onclick="askAI()" class="btn-purple">
+                        <i class="fas fa-paper-plane"></i> Send
+                    </button>
                 </div>
+                
+                <!-- ============================================================
+                PLUS MENU - Appears only when + button is clicked
+                ============================================================ -->
                 <div class="plus-menu" id="plusMenu">
                     <div class="plus-menu-item" onclick="newChat()">
                         <i class="fas fa-plus-circle"></i> New Chat / አዲስ ውይይት
@@ -76,18 +709,22 @@
                         <i class="fas fa-eraser"></i> Clear Context / ማህደር አጽዳ
                     </div>
                 </div>
+                
                 <input type="file" id="pdfUpload" accept=".pdf" style="display:none" onchange="uploadPDF(event)">
                 <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="uploadImage(event)">
             </div>
         </div>
     </section>
 
+    <!-- ============================================================
+    COURSES SECTION
+    ============================================================ -->
     <section class="courses-section">
-        <h2>Our Courses</h2>
+        <h2>📚 <span>Our Courses</span></h2>
         <div class="courses-grid">
             {% for course in courses %}
             <a href="{{ url_for('course_detail', course_id=course.id) }}" class="course-link">
-                <div class="course-item" style="border-top: 3px solid {{ course.color }};">
+                <div class="course-item" style="border-top-color: {{ course.color or '#7c3aed' }};">
                     <h3>{{ course.name }}</h3>
                     <p>{{ course.description }}</p>
                 </div>
@@ -96,6 +733,9 @@
         </div>
     </section>
 
+    <!-- ============================================================
+    JAVASCRIPT
+    ============================================================ -->
     <script>
         // ============================================================
         // CONFIGURE MARKED - FIXED FOR TABLES
