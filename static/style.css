@@ -1,0 +1,545 @@
+/* === RESET & BASE === */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f0f2f5;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+/* === NAVIGATION === */
+nav {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 12px 20px;
+    border-radius: 50px;
+    max-width: 800px;
+    margin: 0 auto 30px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    flex-wrap: wrap;
+}
+
+nav a {
+    text-decoration: none;
+    color: #333;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 30px;
+    transition: 0.3s;
+    font-size: 14px;
+}
+
+nav a:hover {
+    background: #764ba2;
+    color: white;
+}
+
+/* === MAIN CONTAINER === */
+.main-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 15px;
+}
+
+/* === CHAT BOX === */
+.chat-box {
+    background: white;
+    border-radius: 20px;
+    padding: 25px 30px 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.chat-box h2 {
+    color: #764ba2;
+    font-size: 28px;
+    margin-bottom: 5px;
+    text-align: center;
+}
+
+.chat-sub {
+    text-align: center;
+    color: #666;
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+/* === CHAT HISTORY === */
+.chat-history {
+    height: 400px;
+    overflow-y: auto;
+    padding: 15px;
+    background: #f9f9fc;
+    border-radius: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #eee;
+}
+
+.chat-history .placeholder {
+    color: #aaa;
+    text-align: center;
+    padding: 40px 0;
+    font-size: 16px;
+}
+
+/* === MESSAGES === */
+.msg {
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    max-width: 85%;
+    word-wrap: break-word;
+    line-height: 1.6;
+}
+
+.msg.user {
+    background: #764ba2;
+    color: white;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+}
+
+.msg.ai {
+    background: #e9e9ef;
+    color: #222;
+    margin-right: auto;
+    border-bottom-left-radius: 4px;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* ============================================================
+   TABLE STYLES
+   ============================================================ */
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    margin: 15px 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.markdown-table {
+    width: 100%;
+    min-width: 800px;
+    border-collapse: collapse;
+    font-size: 13px;
+    display: table;
+    border: 1px solid #ddd;
+}
+
+.markdown-table th,
+.markdown-table td {
+    border: 1px solid #ccc;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+    word-wrap: break-word;
+}
+
+.markdown-table th {
+    background: #764ba2;
+    color: white;
+    font-weight: bold;
+}
+
+.markdown-table tr:nth-child(even) {
+    background: #f7f7f7;
+}
+
+.markdown-table tr:hover {
+    background: #f0e6ff;
+}
+
+/* === DOWNLOAD BUTTON === */
+.btn-download {
+    display: inline-block;
+    margin-top: 10px;
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.btn-download:hover {
+    background: #218838;
+}
+
+/* === CHAT INPUT === */
+.chat-input {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.chat-input textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid #ddd;
+    border-radius: 12px;
+    font-size: 15px;
+    resize: none;
+    outline: none;
+    transition: 0.3s;
+    font-family: inherit;
+    min-height: 50px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.chat-input textarea:focus {
+    border-color: #764ba2;
+}
+
+.chat-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.chat-actions button {
+    border: none;
+    padding: 10px 16px;
+    border-radius: 30px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: 0.3s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-purple {
+    background: #764ba2;
+    color: white;
+}
+
+.btn-purple:hover {
+    background: #5a3d7c;
+}
+
+.btn-plus {
+    background: #eee;
+    color: #333;
+    font-size: 20px;
+    font-weight: bold;
+    padding: 8px 14px;
+    border-radius: 50%;
+}
+
+.btn-plus:hover {
+    background: #ddd;
+}
+
+.btn-microphone {
+    background: #dc3545;
+    color: white;
+    padding: 8px 14px;
+    border-radius: 50%;
+    font-size: 18px;
+}
+
+.btn-microphone:hover {
+    background: #c82333;
+}
+
+/* === PLUS MENU === */
+.plus-menu {
+    display: none;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    padding: 8px 0;
+    width: 240px;
+    position: absolute;
+    bottom: 70px;
+    right: 20px;
+    z-index: 100;
+}
+
+.plus-menu.show {
+    display: block;
+}
+
+.plus-menu-item {
+    padding: 10px 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: 0.2s;
+    font-size: 14px;
+}
+
+.plus-menu-item:hover {
+    background: #f0e6ff;
+}
+
+.plus-menu-item i {
+    width: 20px;
+    color: #764ba2;
+}
+
+/* === COURSES SECTION === */
+.courses-section {
+    max-width: 1000px;
+    margin: 40px auto 20px;
+    padding: 0 15px;
+}
+
+.courses-section h2 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.courses-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 20px;
+}
+
+.course-link {
+    text-decoration: none;
+}
+
+.course-item {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06);
+    transition: 0.3s;
+    height: 100%;
+    border-top: 4px solid #764ba2;
+}
+
+.course-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.course-item h3 {
+    color: #222;
+    margin-bottom: 8px;
+}
+
+.course-item p {
+    color: #555;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ============================================================
+   RESPONSIVE - MOBILE FRIENDLY
+   ============================================================ */
+
+/* === Tablets and smaller laptops === */
+@media (max-width: 992px) {
+    .chat-box {
+        padding: 20px;
+    }
+    
+    .markdown-table {
+        font-size: 12px;
+        min-width: 700px;
+    }
+}
+
+/* === Mobile phones (portrait) === */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+    
+    nav {
+        gap: 8px;
+        padding: 10px 15px;
+        border-radius: 30px;
+    }
+    
+    nav a {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .chat-box {
+        padding: 15px;
+        border-radius: 15px;
+    }
+    
+    .chat-box h2 {
+        font-size: 22px;
+    }
+    
+    .chat-history {
+        height: 300px;
+        padding: 10px;
+    }
+    
+    .msg {
+        max-width: 95%;
+        padding: 10px 14px;
+        font-size: 14px;
+    }
+    
+    .markdown-table {
+        font-size: 11px;
+        min-width: 600px;
+    }
+    
+    .markdown-table th,
+    .markdown-table td {
+        padding: 6px 8px;
+    }
+    
+    .chat-actions button {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+    
+    .btn-microphone,
+    .btn-plus {
+        padding: 6px 10px;
+        font-size: 16px;
+    }
+    
+    .plus-menu {
+        width: 200px;
+        right: 10px;
+        bottom: 60px;
+    }
+    
+    .plus-menu-item {
+        font-size: 13px;
+        padding: 8px 14px;
+    }
+    
+    .courses-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 15px;
+    }
+    
+    .course-item {
+        padding: 15px;
+    }
+    
+    .course-item h3 {
+        font-size: 16px;
+    }
+    
+    .course-item p {
+        font-size: 13px;
+    }
+}
+
+/* === Small mobile phones === */
+@media (max-width: 480px) {
+    nav {
+        gap: 5px;
+        padding: 8px 10px;
+        border-radius: 20px;
+    }
+    
+    nav a {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .chat-box {
+        padding: 10px;
+    }
+    
+    .chat-box h2 {
+        font-size: 18px;
+    }
+    
+    .chat-sub {
+        font-size: 12px;
+    }
+    
+    .chat-history {
+        height: 250px;
+        padding: 8px;
+    }
+    
+    .msg {
+        font-size: 13px;
+        padding: 8px 12px;
+        max-width: 98%;
+    }
+    
+    .chat-input textarea {
+        font-size: 14px;
+        padding: 10px 12px;
+        min-height: 40px;
+    }
+    
+    .markdown-table {
+        font-size: 10px;
+        min-width: 500px;
+    }
+    
+    .markdown-table th,
+    .markdown-table td {
+        padding: 4px 6px;
+    }
+    
+    .chat-actions button {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+    
+    .btn-microphone,
+    .btn-plus {
+        padding: 4px 8px;
+        font-size: 14px;
+    }
+    
+    .plus-menu {
+        width: 180px;
+        right: 5px;
+        bottom: 50px;
+    }
+    
+    .plus-menu-item {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .courses-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    
+    .course-item {
+        padding: 12px;
+    }
+    
+    .course-item h3 {
+        font-size: 14px;
+    }
+    
+    .course-item p {
+        font-size: 12px;
+    }
+    
+    .btn-download {
+        font-size: 11px;
+        padding: 4px 10px;
+    }
+}
