@@ -1,7 +1,6 @@
 Flask
 Flask-SQLAlchemy
 Flask-Admin
-groq
 gunicorn
 PyPDF2
 pdfplumber
@@ -11,3 +10,6 @@ beautifulsoup4
 requests
 googlesearch-python
 python-docx
+sentence-transformers
+numpy
+faiss-cpu
