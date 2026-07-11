@@ -3,7 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- ===== PAGE TITLE ===== -->
     <title>Nigat Tutor AI - Free AI Tutor for Ethiopian Students & Teachers</title>
+    
+    <!-- ===== META DESCRIPTION ===== -->
+    <meta name="description" content="Free AI tutor for Ethiopian students and teachers. ለኢትዮጵያ ተማሪዎችና መምህራን ነፃ የ AI አስተማሪ።">
+    
+    <!-- ===== OPEN GRAPH (Facebook, Telegram, WhatsApp) ===== -->
+    <meta property="og:title" content="Nigat Tutor AI - ንጋት አስተማሪ AI">
+    <meta property="og:description" content="Free AI tutor for Ethiopian students and teachers. ለኢትዮጵያ ተማሪዎችና መምህራን ነፃ የ AI አስተማሪ።">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://nigat-tutor-ai-6.onrender.com">
+    <meta property="og:image" content="https://raw.githubusercontent.com/your-username/your-repo/main/logo.png">
+    <meta property="og:site_name" content="Nigat Tutor AI">
+    
+    <!-- ===== TWITTER CARDS ===== -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Nigat Tutor AI - ንጋት አስተማሪ AI">
+    <meta name="twitter:description" content="Free AI tutor for Ethiopian students and teachers. ለኢትዮጵያ ተማሪዎችና መምህራን ነፃ የ AI አስተማሪ።">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/your-username/your-repo/main/logo.png">
+    
+    <!-- ===== ADDITIONAL META ===== -->
+    <meta name="keywords" content="AI Tutor, Ethiopia, Education, Students, Teachers, Nigat, Free AI, አስተማሪ, ተማሪዎች, መምህራን">
+    <meta name="robots" content="index, follow">
+    <meta name="author" content="Teacher Fisaha Melke">
+    <link rel="canonical" href="https://nigat-tutor-ai-6.onrender.com">
+    
     <style>
         /* ===== RESET & BASE ===== */
         * {
@@ -711,26 +737,70 @@
             document.getElementById('dropdownMenu').classList.remove('show');
         }
 
-        // ===== UPLOAD PDF =====
+        // ===== UPLOAD PDF (በተሻሻለ መልኩ) =====
         function uploadPDF(input) {
             const file = input.files[0];
-            if (file) {
-                const formData = new FormData();
-                formData.append('file', file);
+            if (!file) return;
+            
+            const messages = document.getElementById('chat-messages');
+            
+            // "⏳ Uploading PDF... Please wait..." አሳይ
+            const loadingMsg = document.createElement('div');
+            loadingMsg.className = 'loading';
+            loadingMsg.id = 'uploadLoading';
+            loadingMsg.textContent = '⏳ Uploading PDF... Please wait...';
+            messages.appendChild(loadingMsg);
+            messages.scrollTop = messages.scrollHeight;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // የloading መልእክት አስወግድ
+                const loading = document.getElementById('uploadLoading');
+                if (loading) loading.remove();
                 
-                fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    alert('PDF uploaded successfully!');
-                    document.getElementById('dropdownMenu').classList.remove('show');
-                })
-                .catch(error => {
-                    alert('Error uploading PDF');
-                });
-            }
+                // ውጤት አሳይ
+                const msgDiv = document.createElement('div');
+                if (data.success) {
+                    msgDiv.className = 'ai-msg';
+                    msgDiv.style.borderColor = 'rgba(72, 187, 120, 0.4)';
+                    msgDiv.style.background = 'rgba(72, 187, 120, 0.15)';
+                    msgDiv.innerHTML = `✅ ${data.message}`;
+                } else {
+                    msgDiv.className = 'ai-msg';
+                    msgDiv.style.borderColor = 'rgba(245, 101, 101, 0.4)';
+                    msgDiv.style.background = 'rgba(245, 101, 101, 0.15)';
+                    msgDiv.style.color = '#feb2b2';
+                    msgDiv.innerHTML = `❌ ${data.message}`;
+                }
+                messages.appendChild(msgDiv);
+                messages.scrollTop = messages.scrollHeight;
+                
+                input.value = '';
+                document.getElementById('dropdownMenu').classList.remove('show');
+            })
+            .catch(error => {
+                const loading = document.getElementById('uploadLoading');
+                if (loading) loading.remove();
+                
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'ai-msg';
+                msgDiv.style.borderColor = 'rgba(245, 101, 101, 0.4)';
+                msgDiv.style.background = 'rgba(245, 101, 101, 0.15)';
+                msgDiv.style.color = '#feb2b2';
+                msgDiv.innerHTML = '❌ Error uploading PDF. Please try again.';
+                messages.appendChild(msgDiv);
+                messages.scrollTop = messages.scrollHeight;
+                
+                input.value = '';
+                document.getElementById('dropdownMenu').classList.remove('show');
+            });
         }
 
         // ===== UPLOAD IMAGE =====
