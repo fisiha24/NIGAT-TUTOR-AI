@@ -66,7 +66,94 @@ def get_next_model():
     current_model_index += 1
     return model
 
-def get_ai_response(system_prompt, user_query, context_chunks):
+# ================================================================
+# GENERAL RESPONSE (ከሰነድ ውጭ)
+# ================================================================
+
+def get_general_response(user_query, query_lang):
+    """አጠቃላይ ጥያቄዎችን ለመመለስ"""
+    
+    if query_lang == 'amharic':
+        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
+    else:
+        lang_instruction = "You MUST respond in English."
+    
+    system_prompt = (
+        "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke.\n\n"
+        f"=== LANGUAGE RULE ===\n{lang_instruction}\n"
+        "Do NOT switch languages.\n\n"
+        "=== ABOUT THE CREATOR ===\n"
+        "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
+        "=== ACCURACY RULE ===\n"
+        "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.'\n\n"
+        "=== AMHARIC SPELLING ===\n"
+        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
+        "=== INSTRUCTION ===\n"
+        "Answer the user's question as a helpful AI tutor. Provide clear, accurate, and educational responses."
+    )
+    
+    if not OPENROUTER_API_KEY:
+        return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
+    
+    full_prompt = f"{system_prompt}\n\nUser: {user_query}"
+    
+    max_attempts = len(FREE_MODELS) * 2
+    for attempt in range(max_attempts):
+        model = get_next_model()
+        print(f"🤖 Attempt {attempt+1}: Using {model}")
+        
+        try:
+            response = requests.post(
+                OPENROUTER_BASE_URL,
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://nigat-tutor-ai.onrender.com",
+                    "X-Title": "Nigat Tutor AI"
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    "temperature": 0.05,
+                    "max_tokens": 1024,
+                },
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'choices' in data and data['choices']:
+                    print(f"✅ Response received from {model}")
+                    if model in model_failures:
+                        del model_failures[model]
+                    return data['choices'][0]['message']['content']
+            else:
+                error_msg = response.text[:200] if response.text else "Unknown error"
+                print(f"⚠️ {model} error: {response.status_code} - {error_msg}")
+                model_failures[model] = True
+                if response.status_code == 429:
+                    print(f"⏳ Rate limit on {model}, switching to next model...")
+                    continue
+                    
+        except requests.exceptions.Timeout:
+            print(f"⏰ Timeout on {model}, trying next...")
+            model_failures[model] = True
+            continue
+        except Exception as e:
+            print(f"⚠️ Error with {model}: {e}")
+            model_failures[model] = True
+            continue
+    
+    return "⚠️ All available models failed. Please try again later or check your OpenRouter API key."
+
+# ================================================================
+# DOCUMENT-BASED RESPONSE
+# ================================================================
+
+def get_document_response(system_prompt, user_query, context_chunks):
     if not OPENROUTER_API_KEY:
         return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
     
@@ -317,9 +404,9 @@ class EnterpriseRAG:
         self.doc_metadata = {}
         self.chunk_texts = {}
         self.faiss_indexes = {}
-        self.chunk_size = 250      # ቀንሷል
-        self.overlap = 30          # ቀንሷል
-        self.max_chunks = 300      # ከፍተኛ የክፍል ብዛት
+        self.chunk_size = 250
+        self.overlap = 30
+        self.max_chunks = 300
     
     def get_index_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}.faiss")
@@ -368,17 +455,14 @@ class EnterpriseRAG:
             embeddings.append(emb)
             chunk_count += 1
             
-            # Add to FAISS in smaller batches (30 instead of 50)
             if faiss_index is not None and len(embeddings) >= 30:
                 if embeddings:
                     emb_array = np.array(embeddings).astype('float32')
                     faiss_index.add(emb_array)
                     embeddings = []
-                    # Force garbage collection
                     import gc
                     gc.collect()
         
-        # Add remaining embeddings
         if embeddings and faiss_index is not None:
             emb_array = np.array(embeddings).astype('float32')
             faiss_index.add(emb_array)
@@ -458,16 +542,15 @@ class EnterpriseRAG:
                     if total_tokens + estimated <= max_tokens:
                         selected.append(chunk)
                         total_tokens += estimated
-                    if len(selected) >= 4:  # Limit to 4 chunks max
+                    if len(selected) >= 4:
                         break
                 return selected if selected else [chunks[0]]
             except:
                 pass
         
-        # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
-        for i, chunk in enumerate(chunks[:80]):  # Only check first 80 chunks
+        for i, chunk in enumerate(chunks[:80]):
             chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
             overlap = len(query_words & chunk_words)
             if overlap > 0:
@@ -672,7 +755,7 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES (Memory Optimized)
+# UPLOAD ROUTES
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -747,8 +830,9 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE
+# AI CHAT ROUTE (የተሻሻለ)
 # ================================================================
+
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
     user_query = request.json.get('query', '').strip()
@@ -762,13 +846,24 @@ def ask_ai():
     
     session_id = session.get('session_id')
     
+    # ===== IF NO DOCUMENT UPLOADED - GENERAL KNOWLEDGE =====
     if not session_id:
-        return jsonify({"answer": "Please upload a document first before asking questions."})
+        print("📚 No document found, using general knowledge mode")
+        answer = get_general_response(user_query, query_lang)
+        if answer:
+            answer = remove_duplicate_sentences(answer)
+        return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
     
+    # ===== DOCUMENT-BASED RESPONSE =====
     relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000)
     
     if not relevant_chunks:
-        return jsonify({"answer": "I couldn't find relevant information in the uploaded document. Please try a different question."})
+        # ምንም ተዛማጅ ክፍል ካልተገኘ አጠቃላይ መልስ ይስጥ
+        print("📚 No relevant chunks found, using general knowledge mode")
+        answer = get_general_response(user_query, query_lang)
+        if answer:
+            answer = remove_duplicate_sentences(answer)
+        return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
     
     doc_info = rag.get_document_info(session_id)
     if doc_info:
@@ -793,7 +888,7 @@ def ask_ai():
         "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n"
     )
     
-    answer = get_ai_response(system_prompt, user_query, relevant_chunks)
+    answer = get_document_response(system_prompt, user_query, relevant_chunks)
     
     if answer:
         answer = remove_duplicate_sentences(answer)
