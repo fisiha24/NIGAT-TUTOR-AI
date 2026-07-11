@@ -3,40 +3,155 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contact Us - Nigat Tutor</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Contact - Nigat AI Tutor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            color: #ffffff;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+            padding: 45px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        h1 {
+            font-size: 2.8rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #f093fb, #f5576c, #4facfe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 18px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .contact-item:last-child {
+            border-bottom: none;
+        }
+
+        .contact-item .icon {
+            font-size: 1.8rem;
+            width: 50px;
+            text-align: center;
+        }
+
+        .contact-item .info {
+            flex: 1;
+        }
+
+        .contact-item .info strong {
+            display: block;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .contact-item .info span {
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 35px;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            margin-top: 25px;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            transform: scale(1.03);
+            box-shadow: 0 8px 30px rgba(79, 172, 254, 0.3);
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .card {
+                padding: 25px;
+            }
+
+            .contact-item {
+                flex-direction: column;
+                text-align: center;
+                gap: 8px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <nav>
-        <a href="{{ url_for('home') }}">Home</a>
-        <a href="{{ url_for('about') }}">About Us</a>
-        <a href="{{ url_for('contact') }}">Contact</a>
-        <a href="{{ url_for('register') }}">Register</a>
-        <a href="{{ url_for('upload_file') }}">Upload</a>
-        <a href="{{ url_for('lesson_home') }}" style="color: #764ba2; font-weight: 600;">Lesson Plan</a>
-        <a href="https://sites.google.com/view/your-site-link" target="_blank" style="color: #764ba2; font-weight: 600;">Google Site</a>
-    </nav>
+    <div class="container">
+        <div class="card">
+            <h1>📧 Contact Us</h1>
 
-    <section class="content-box" style="max-width: 800px; margin: 50px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
-        <h1>📞 Contact Nigat Tutor</h1>
-        <p style="text-align: center; color: #666;">We would love to hear from you!</p>
-        
-        <hr>
-        
-        <div style="font-size: 1.1em; line-height: 2.2; padding: 10px 0;">
-            <p><strong>📧 Email:</strong> <span style="color: #764ba2;">fisihamelkie6@gmail.com</span></p>
-            <p><strong>📱 Phone 1:</strong> <span style="color: #764ba2;">+251 919 704 062</span></p>
-            <p><strong>📱 Phone 2:</strong> <span style="color: #764ba2;">+251 978 127 213</span></p>
-            <p><strong>📍 Address:</strong> <span style="color: #764ba2;">Jekros, Addis Ababa</span></p>
+            <div class="contact-item">
+                <div class="icon">📞</div>
+                <div class="info">
+                    <strong>Phone</strong>
+                    <span>0919 704 062 / 0978 127 213</span>
+                </div>
+            </div>
+
+            <div class="contact-item">
+                <div class="icon">📍</div>
+                <div class="info">
+                    <strong>Location</strong>
+                    <span>Jekros, Addis Ababa, Ethiopia</span>
+                </div>
+            </div>
+
+            <div class="contact-item">
+                <div class="icon">👨‍🏫</div>
+                <div class="info">
+                    <strong>Creator</strong>
+                    <span>Teacher Fisaha Melke</span>
+                </div>
+            </div>
+
+            <div class="contact-item">
+                <div class="icon">📧</div>
+                <div class="info">
+                    <strong>Email</strong>
+                    <span>support@nigat.com</span>
+                </div>
+            </div>
+
+            <a href="/" class="btn">🏠 Back to Home</a>
         </div>
-        
-        <hr>
-        
-        <div style="background: #f5f0ff; padding: 15px; border-radius: 10px; text-align: center;">
-            <p style="margin: 0; color: #4a148c; font-weight: 500;">
-                ለማንኛውም ጥያቄ ወይም እርዳታ በስልክ ወይም በኢሜል ያናግሩን።
-            </p>
-        </div>
-    </section>
+    </div>
 </body>
 </html>
