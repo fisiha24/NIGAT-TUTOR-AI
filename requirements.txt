@@ -11,3 +11,5 @@ beautifulsoup4
 requests
 googlesearch-python
 python-docx
+google-generativeai
+openai
