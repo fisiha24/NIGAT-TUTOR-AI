@@ -33,6 +33,11 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
+# DATABASE INITIALIZATION
+# ================================================================
+db = SQLAlchemy(app)
+
+# ================================================================
 # OPENROUTER CONFIGURATION - 100% FREE MODELS
 # ================================================================
 
@@ -48,14 +53,12 @@ FREE_MODELS = [
 ]
 
 current_model_index = 0
-model_failures = {}  # Track failed models to skip them temporarily
+model_failures = {}
 
 def get_next_model():
-    """Get next available free model"""
     global current_model_index
     available_models = [m for m in FREE_MODELS if m not in model_failures]
     if not available_models:
-        # Reset if all models failed
         model_failures.clear()
         available_models = FREE_MODELS
     
@@ -64,8 +67,6 @@ def get_next_model():
     return model
 
 def get_ai_response(system_prompt, user_query, context_chunks):
-    """Get response from OpenRouter with fallback support"""
-    
     if not OPENROUTER_API_KEY:
         return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
     
@@ -76,7 +77,7 @@ def get_ai_response(system_prompt, user_query, context_chunks):
     prompt_type = detect_prompt_type(user_query)
     prompt_template = get_prompt_template(prompt_type)
     
-    # Detect language
+    # Language instruction
     if detect_language(user_query) == 'amharic':
         lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
@@ -91,7 +92,6 @@ def get_ai_response(system_prompt, user_query, context_chunks):
         f"=== USER QUESTION ===\n{user_query}"
     )
     
-    # Estimate token count
     estimated_tokens = len(full_prompt) // 4
     print(f"📊 Estimated tokens: {estimated_tokens}")
     
@@ -126,17 +126,13 @@ def get_ai_response(system_prompt, user_query, context_chunks):
                 data = response.json()
                 if 'choices' in data and data['choices']:
                     print(f"✅ Response received from {model}")
-                    # Remove failed model from failures
                     if model in model_failures:
                         del model_failures[model]
                     return data['choices'][0]['message']['content']
             else:
-                # Log error and mark model as failed
                 error_msg = response.text[:200] if response.text else "Unknown error"
                 print(f"⚠️ {model} error: {response.status_code} - {error_msg}")
                 model_failures[model] = True
-                
-                # If rate limit or quota exceeded, try next model
                 if response.status_code == 429:
                     print(f"⏳ Rate limit on {model}, switching to next model...")
                     continue
@@ -278,7 +274,6 @@ def remove_duplicate_sentences(text):
     return ' '.join(unique)
 
 def extract_pdf_text_streaming(filepath):
-    """Extract PDF text page by page"""
     try:
         import pdfplumber
         text_parts = []
@@ -511,7 +506,7 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS (UNCHANGED)
+# MODELS
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -651,7 +646,6 @@ admin.add_view(ModelView(PeaceClubActivity, db))
 # ================================================================
 # ROUTES
 # ================================================================
-
 @app.route('/')
 def home():
     try:
@@ -686,7 +680,6 @@ def course_detail(course_id):
 # ================================================================
 # UPLOAD ROUTES
 # ================================================================
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -744,6 +737,7 @@ def upload_image():
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
+        uploaded_texts['images'].append(f"Image uploaded: {filename}")
         return jsonify({'message': 'Image uploaded successfully'}), 200
     else:
         return jsonify({'error': 'Unsupported file type'}), 400
@@ -760,9 +754,8 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (UPDATED with OpenRouter)
+# AI CHAT ROUTE
 # ================================================================
-
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
     user_query = request.json.get('query', '').strip()
@@ -779,7 +772,7 @@ def ask_ai():
     if not session_id:
         return jsonify({"answer": "Please upload a document first before asking questions."})
     
-    # Get relevant chunks
+    # Get relevant chunks using RAG
     relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4500)
     
     if not relevant_chunks:
@@ -818,9 +811,8 @@ def ask_ai():
     return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
 
 # ================================================================
-# DOWNLOAD WORD (UNCHANGED)
+# DOWNLOAD WORD
 # ================================================================
-
 @app.route('/download_word', methods=['POST'])
 def download_word():
     data = request.json
@@ -919,9 +911,8 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES (UNCHANGED)
+# LESSON PLAN ROUTES
 # ================================================================
-
 @app.route('/lesson')
 def lesson_home():
     annual_plans = AnnualPlan.query.all()
@@ -1069,9 +1060,8 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES (UNCHANGED)
+# PEACE CLUB ROUTES
 # ================================================================
-
 @app.route('/peaceclub')
 def peaceclub_home():
     club_plans = PeaceClubPlan.query.all()
@@ -1285,7 +1275,6 @@ def peaceclub_delete(plan_id):
 # ================================================================
 # CREATE TABLES ON APPLICATION STARTUP
 # ================================================================
-
 with app.app_context():
     try:
         db.create_all()
@@ -1297,7 +1286,6 @@ with app.app_context():
 # ================================================================
 # MAIN
 # ================================================================
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
