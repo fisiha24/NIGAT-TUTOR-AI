@@ -71,14 +71,14 @@ uploaded_texts = {
 }
 
 # ================================================================
-# MODELS
+# MODELS (Peace Club ተወግዷል)
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=False)
-    color = db.Column(db.String(20), default='#764ba2')
+    color = db.Column(db.String(20), default='blue')
     quiz_link = db.Column(db.String(500))
 
 class AnnualPlan(db.Model):
@@ -147,49 +147,12 @@ class DailyPlan(db.Model):
     self_assessment = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# --- Admin Views ---
+# --- Admin Views (Peace Club ተወግዷል) ---
 admin = Admin(app, name='Nigat Admin')
 admin.add_view(ModelView(Course, db))
 admin.add_view(ModelView(AnnualPlan, db))
 admin.add_view(ModelView(LaboratoryPlan, db))
 admin.add_view(ModelView(DailyPlan, db))
-
-# ================================================================
-# DATABASE TABLE CREATION - CRITICAL FIX
-# ================================================================
-def init_db():
-    """Initialize database tables and add sample data"""
-    try:
-        with app.app_context():
-            db.create_all()
-            print("✅ Database tables created/verified successfully.")
-            print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
-            
-            # Add sample courses if none exist
-            if Course.query.count() == 0:
-                print("📝 Adding sample course data...")
-                sample_courses = [
-                    Course(name="Mathematics", description="Algebra, Geometry, Calculus and more", color="#667eea"),
-                    Course(name="Physics", description="Mechanics, Thermodynamics, Optics and more", color="#48bb78"),
-                    Course(name="Chemistry", description="Elements, Compounds, Reactions and more", color="#ed8936"),
-                    Course(name="Biology", description="Living organisms, Ecosystems, Genetics and more", color="#38b2ac"),
-                    Course(name="English", description="Grammar, Literature, Writing and more", color="#9f7aea"),
-                    Course(name="History", description="World History, Ethiopian History and more", color="#fc8181")
-                ]
-                for course in sample_courses:
-                    db.session.add(course)
-                db.session.commit()
-                print("✅ Sample courses added successfully!")
-                
-    except Exception as e:
-        print(f"❌ Failed to create tables: {e}")
-        print(f"⚠️ Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")
-        return False
-    return True
-
-# Initialize database on startup
-with app.app_context():
-    init_db()
 
 # ================================================================
 # HELPER FUNCTIONS
@@ -303,16 +266,7 @@ def get_ai_response(system_prompt, user_query):
 # ================================================================
 @app.route('/')
 def home():
-    try:
-        courses = Course.query.all()
-        return render_template('index.html', courses=courses)
-    except Exception as e:
-        print(f"❌ Home route error: {e}")
-        # Try to recreate tables if they don't exist
-        with app.app_context():
-            db.create_all()
-        courses = Course.query.all()
-        return render_template('index.html', courses=courses)
+    return render_template('index.html', courses=Course.query.all())
 
 @app.route('/about')
 def about():
@@ -338,14 +292,13 @@ def course_detail(course_id):
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    """Handle PDF upload and return JSON response for AJAX"""
     if 'file' not in request.files:
-        flash('No file uploaded.', 'error')
-        return redirect(url_for('home'))
+        return jsonify({'success': False, 'message': 'No file uploaded.'}), 400
     
     file = request.files['file']
     if file.filename == '':
-        flash('No file selected.', 'error')
-        return redirect(url_for('home'))
+        return jsonify({'success': False, 'message': 'No file selected.'}), 400
     
     if file and file.filename.lower().endswith('.pdf'):
         try:
@@ -367,14 +320,12 @@ def upload_file():
             uploaded_texts['pdf'] = []
             uploaded_texts['pdf'].append(truncated_text)
             
-            flash(f'PDF uploaded successfully! ({file_size:.1f}MB)', 'success')
-            return redirect(url_for('home'))
+            return jsonify({'success': True, 'message': f'PDF uploaded successfully! ({file_size:.1f}MB)'}), 200
+            
         except Exception as e:
-            flash(f'Error processing PDF: {str(e)}', 'error')
-            return redirect(url_for('home'))
+            return jsonify({'success': False, 'message': f'Error processing PDF: {str(e)}'}), 500
     else:
-        flash('Only PDF files are allowed.', 'error')
-        return redirect(url_for('home'))
+        return jsonify({'success': False, 'message': 'Only PDF files are allowed.'}), 400
 
 @app.route('/upload_image', methods=['POST'])
 def upload_image():
@@ -400,7 +351,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared'}), 200
 
 # ================================================================
-# AI CHAT ROUTE
+# AI CHAT ROUTE (WITH FULL LESSON PLAN TEMPLATES)
 # ================================================================
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
@@ -425,13 +376,17 @@ def ask_ai():
         img_text = "\n".join(uploaded_texts['images'][-2:])
         context += "Image Uploaded:\n" + img_text + "\n"
     
+    # ============================================================
     # LANGUAGE INSTRUCTION
+    # ============================================================
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
         language_instruction = "You MUST respond in English."
     
-    # SYSTEM PROMPT
+    # ============================================================
+    # SYSTEM PROMPT - WITH FULL LESSON PLAN TEMPLATES
+    # ============================================================
     system_prompt = (
         "You are 'Nigat AI Tutor'. Your creator is Teacher Fisaha Melke.\n\n"
         
@@ -557,13 +512,14 @@ def ask_ai():
     
     answer = get_ai_response(system_prompt, user_query)
     
+    # Clean up duplicates
     if answer:
         answer = remove_duplicate_sentences(answer)
     
     return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
 
 # ================================================================
-# DOWNLOAD WORD
+# DOWNLOAD WORD - FIXED (using old structure to prevent splitting)
 # ================================================================
 @app.route('/download_word', methods=['POST'])
 def download_word():
@@ -574,6 +530,7 @@ def download_word():
     doc = Document()
     doc.add_heading('Nigat AI Tutor Response', 0)
     
+    # Split content into lines and process
     lines = content.split('\n')
     in_table = False
     table_rows = []
@@ -582,9 +539,12 @@ def download_word():
     for line in lines:
         line = line.strip()
         
+        # Check if line is a table row (starts and ends with |)
         if line.startswith('|') and line.endswith('|'):
+            # Split cells
             cells = [cell.strip() for cell in line[1:-1].split('|')]
             
+            # Skip separator rows (|---|---|)
             if all('---' in cell or ':' in cell for cell in cells):
                 continue
             
@@ -594,30 +554,39 @@ def download_word():
             else:
                 table_rows.append(cells)
         else:
+            # If we were in a table and now we're not, render the table
             if in_table and table_rows:
+                # Determine number of columns
                 num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
                 
+                # Create table with header + data rows
                 table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
                 table.style = 'Table Grid'
                 
+                # Add headers (bold)
                 for i, header in enumerate(table_headers[:num_cols]):
                     cell = table.cell(0, i)
                     cell.text = header
+                    # Make header bold
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             run.bold = True
                 
+                # Add data rows
                 for row_idx, row in enumerate(table_rows):
                     for col_idx, cell_text in enumerate(row[:num_cols]):
                         table.cell(row_idx + 1, col_idx).text = cell_text
                 
+                # Reset table state
                 table_rows = []
                 table_headers = []
                 in_table = False
             
+            # Add normal paragraph (skip empty lines)
             if line:
                 doc.add_paragraph(line)
     
+    # If table is still open, render it
     if in_table and table_rows:
         num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
         table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
@@ -634,6 +603,7 @@ def download_word():
             for col_idx, cell_text in enumerate(row[:num_cols]):
                 table.cell(row_idx + 1, col_idx).text = cell_text
     
+    # Save document
     file_stream = BytesIO()
     doc.save(file_stream)
     file_stream.seek(0)
@@ -646,7 +616,7 @@ def download_word():
     )
 
 # ================================================================
-# LESSON PLAN ROUTES
+# LESSON PLAN ROUTES (Peace Club ተወግዷል)
 # ================================================================
 @app.route('/lesson')
 def lesson_home():
@@ -793,6 +763,18 @@ def daily_plan():
         return redirect(url_for('lesson_home'))
     
     return render_template('daily_plan_form.html')
+
+# ================================================================
+# CREATE TABLES ON APPLICATION STARTUP (FOR ALL ENVIRONMENTS)
+# ================================================================
+with app.app_context():
+    try:
+        db.create_all()
+        print("✅ Database tables created/verified successfully.")
+        print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    except Exception as e:
+        print(f"❌ Failed to create tables: {e}")
+        print("⚠️ Please check your database configuration.")
 
 # ================================================================
 # MAIN
