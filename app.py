@@ -12,18 +12,22 @@ from datetime import datetime
 from io import BytesIO
 from docx import Document
 
+# ================================================================
+# APP CONFIGURATION
+# ================================================================
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nigat.db'
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'mysecretkey')
+app.config['SECRET_KEY'] = 'mysecretkey'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # --- Upload folder initialization ---
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# GROQ API CONFIGURATION
+# GROQ API
 # ================================================================
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', "")
 client = Groq(api_key=GROQ_API_KEY)
@@ -36,7 +40,9 @@ uploaded_texts = {
     'images': []
 }
 
-# --- Helper function to detect language ---
+# ================================================================
+# HELPER FUNCTIONS
+# ================================================================
 def detect_language(text):
     """Detect if text is Amharic or English based on Unicode range"""
     if not text:
@@ -46,7 +52,7 @@ def detect_language(text):
         return 'amharic'
     return 'english'
 
-def summarize_for_context(text, max_chars=3000):
+def summarize_for_context(text, max_chars=10000):
     if len(text) <= max_chars:
         return text
     first_part = text[:int(max_chars * 0.7)]
@@ -108,8 +114,11 @@ def remove_duplicate_sentences(text):
     
     return result
 
-# --- Existing Models ---
+# ================================================================
+# MODELS
+# ================================================================
 class Course(db.Model):
+    __tablename__ = 'course'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=False)
@@ -117,6 +126,7 @@ class Course(db.Model):
     quiz_link = db.Column(db.String(500))
 
 class AnnualPlan(db.Model):
+    __tablename__ = 'annual_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -132,6 +142,7 @@ class AnnualPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class LaboratoryPlan(db.Model):
+    __tablename__ = 'laboratory_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -142,6 +153,7 @@ class LaboratoryPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class DailyPlan(db.Model):
+    __tablename__ = 'daily_plan'
     id = db.Column(db.Integer, primary_key=True)
     teacher_name = db.Column(db.String(100))
     school_name = db.Column(db.String(200))
@@ -181,6 +193,7 @@ class DailyPlan(db.Model):
 
 # --- Peace Club Models ---
 class PeaceClubPlan(db.Model):
+    __tablename__ = 'peace_club_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     district = db.Column(db.String(200))
@@ -213,6 +226,7 @@ class PeaceClubPlan(db.Model):
         return json.loads(self.teacher_members) if self.teacher_members else []
 
 class PeaceClubActivity(db.Model):
+    __tablename__ = 'peace_club_activity'
     id = db.Column(db.Integer, primary_key=True)
     club_plan_id = db.Column(db.Integer, db.ForeignKey('peace_club_plan.id'))
     activity_number = db.Column(db.Integer)
@@ -240,7 +254,9 @@ admin.add_view(ModelView(DailyPlan, db))
 admin.add_view(ModelView(PeaceClubPlan, db))
 admin.add_view(ModelView(PeaceClubActivity, db))
 
-# --- Existing Routes ---
+# ================================================================
+# ROUTES
+# ================================================================
 @app.route('/')
 def home():
     try:
@@ -273,7 +289,7 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES (የተሻሻለ)
+# UPLOAD ROUTES
 # ================================================================
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -293,16 +309,16 @@ def upload_file():
             file_size = os.path.getsize(filepath) / (1024 * 1024)
             text = extract_pdf_text(filepath)
             
-            if file_size > 10:
-                max_chars = 5000
-            elif file_size > 5:
-                max_chars = 4000
+            if file_size > 50:
+                max_chars = 10000
+            elif file_size > 20:
+                max_chars = 8000
             else:
-                max_chars = 3000
+                max_chars = 10000
             
             truncated_text = summarize_for_context(text, max_chars=max_chars)
             
-            # ===== SESSION-BASED CONTEXT STORAGE =====
+            # Session-based storage
             if 'session_id' not in session:
                 session['session_id'] = str(uuid.uuid4())
             
@@ -363,22 +379,22 @@ def ask_ai():
     query_lang = detect_language(user_query)
     print(f"🔍 Detected language: {query_lang}")
     
-    # ===== CONTEXT BUILDING =====
+    # Build context
     context = ""
     
-    # 1. ከSession ውስጥ PDF ጽሑፍ ለማንበብ
+    # 1. From session
     pdf_text = session.get('pdf_context', '')
     if pdf_text:
-        if len(pdf_text) > 2500:
-            pdf_text = pdf_text[:2500] + "... [truncated]"
+        if len(pdf_text) > 10000:
+            pdf_text = pdf_text[:10000] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print(f"📄 Using PDF from session: {session.get('pdf_filename', 'unknown')}")
     
-    # 2. ከuploaded_texts ያንብቡ
+    # 2. From uploaded_texts
     elif uploaded_texts['pdf']:
         pdf_text = "\n".join(uploaded_texts['pdf'][-2:])
-        if len(pdf_text) > 2500:
-            pdf_text = pdf_text[:2500] + "... [truncated]"
+        if len(pdf_text) > 10000:
+            pdf_text = pdf_text[:10000] + "... [truncated]"
         context += "PDF Content:\n" + pdf_text + "\n"
         print("📄 Using PDF from uploaded_texts")
     
@@ -387,17 +403,12 @@ def ask_ai():
         img_text = "\n".join(uploaded_texts['images'][-2:])
         context += "Image Uploaded:\n" + img_text + "\n"
     
-    # ============================================================
-    # LANGUAGE INSTRUCTION
-    # ============================================================
+    # Language instruction
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
         language_instruction = "You MUST respond in English."
     
-    # ============================================================
-    # SYSTEM PROMPT
-    # ============================================================
     system_prompt = (
         "You are 'Nigat AI Tutor'. Your creator is Teacher Fisaha Melke.\n\n"
         
@@ -529,21 +540,38 @@ def ask_ai():
         "**Teacher Members:** [LIST_OF_TEACHERS]\n\n"
         
         "=== ACCURACY RULE ===\n"
-        "7. Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.' in the user's language.\n\n"
+        "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.' in the user's language.\n\n"
         
         "=== AMHARIC SPELLING ===\n"
-        "8. Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
+        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
         
         "=== FINAL REMINDER ===\n"
-        "9. TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
-        "10. The user should fill in the placeholders [LIKE_THIS] with their own information.\n"
-        "11. When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
-        "12. Do NOT change the format or remove any sections.\n"
-        "13. For Amharic responses, use correct Amharic spelling and script.\n"
-        "14. If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic."
+        "1. TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
+        "2. For Amharic responses, use correct Amharic spelling and script.\n"
+        "3. If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic.\n"
+        "4. NEVER repeat sentences. Write each sentence only ONCE.\n"
+        "5. Write 3-5 sentences for general questions.\n"
+        "6. When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
+        "7. Do NOT change the format or remove any sections.\n"
+        "8. The user should fill in the placeholders [LIKE_THIS] with their own information."
     )
     
+    answer = get_ai_response(system_prompt, user_query)
+    
+    if answer:
+        answer = remove_duplicate_sentences(answer)
+    
+    return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
+
+# ================================================================
+# AI RESPONSE FUNCTION (GROQ)
+# ================================================================
+def get_ai_response(system_prompt, user_query):
+    """Get response from Groq API"""
+    
     try:
+        print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
+        
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -551,16 +579,22 @@ def ask_ai():
             ],
             model="llama-3.3-70b-versatile",
             temperature=0.05,
-            max_tokens=2048,
+            max_tokens=4096,
+            top_p=0.85,
         )
-        answer = chat_completion.choices[0].message.content
-        answer = remove_duplicate_sentences(answer)
-        return jsonify({"answer": answer})
+        
+        if chat_completion and chat_completion.choices:
+            print("✅ Groq response received")
+            return chat_completion.choices[0].message.content
+            
     except Exception as e:
-        return jsonify({"answer": f"AI Error: {str(e)}"})
+        print(f"⚠️ Groq error: {e}")
+        return f"AI Error: {str(e)}"
+    
+    return "⚠️ No response from AI service."
 
 # ================================================================
-# DOWNLOAD WORD - የተሻሻለ (Tables በደንብ እንዲያሳይ)
+# DOWNLOAD WORD
 # ================================================================
 @app.route('/download_word', methods=['POST'])
 def download_word():
@@ -583,14 +617,9 @@ def download_word():
         for line in lines:
             line = line.strip()
             
-            if not line:
-                continue
-            
-            # Check if line is a table row (starts and ends with |)
             if line.startswith('|') and line.endswith('|'):
                 cells = [cell.strip() for cell in line[1:-1].split('|')]
                 
-                # Skip separator rows (|---|---|)
                 if all('---' in cell or ':' in cell for cell in cells):
                     continue
                 
@@ -600,7 +629,6 @@ def download_word():
                 else:
                     table_rows.append(cells)
             else:
-                # If we were in a table and now we're not, render the table
                 if in_table and table_rows:
                     num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
                     
@@ -623,15 +651,14 @@ def download_word():
                     table_headers = []
                     in_table = False
                 
-                # Add normal paragraph
-                if line.startswith('#'):
-                    heading_level = min(len(line) - len(line.lstrip('#')), 6)
-                    heading_text = line.lstrip('#').strip()
-                    doc.add_heading(heading_text, level=heading_level)
-                else:
-                    doc.add_paragraph(line)
+                if line:
+                    if line.startswith('#'):
+                        heading_level = min(len(line) - len(line.lstrip('#')), 6)
+                        heading_text = line.lstrip('#').strip()
+                        doc.add_heading(heading_text, level=heading_level)
+                    else:
+                        doc.add_paragraph(line)
         
-        # If table is still open, render it
         if in_table and table_rows:
             num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
             if num_cols > 0 and table_headers:
@@ -847,6 +874,7 @@ def peaceclub_create():
         db.session.add(plan)
         db.session.flush()
         
+        # Save activities
         activity_names = request.form.getlist('activity_name[]')
         hamle_values = request.form.getlist('hamle')
         nehase_values = request.form.getlist('nehase')
@@ -882,6 +910,7 @@ def peaceclub_create():
                 )
                 db.session.add(activity)
         
+        # Save student members
         student_names = request.form.getlist('student_name[]')
         student_grades = request.form.getlist('student_grade[]')
         student_data = []
@@ -893,6 +922,7 @@ def peaceclub_create():
                 })
         plan.student_members = json.dumps(student_data)
         
+        # Save teacher members
         teacher_names = request.form.getlist('teacher_name[]')
         teacher_grades = request.form.getlist('teacher_grade[]')
         teacher_data = []
@@ -947,9 +977,11 @@ def peaceclub_edit(plan_id):
         plan.challenges = request.form.get('challenges')
         plan.solutions = request.form.get('solutions')
         
+        # Delete old activities
         for activity in activities:
             db.session.delete(activity)
         
+        # Add new activities
         activity_names = request.form.getlist('activity_name[]')
         hamle_values = request.form.getlist('hamle')
         nehase_values = request.form.getlist('nehase')
@@ -985,6 +1017,7 @@ def peaceclub_edit(plan_id):
                 )
                 db.session.add(activity)
         
+        # Update student members
         student_names = request.form.getlist('student_name[]')
         student_grades = request.form.getlist('student_grade[]')
         student_data = []
@@ -996,6 +1029,7 @@ def peaceclub_edit(plan_id):
                 })
         plan.student_members = json.dumps(student_data)
         
+        # Update teacher members
         teacher_names = request.form.getlist('teacher_name[]')
         teacher_grades = request.form.getlist('teacher_grade[]')
         teacher_data = []
@@ -1035,6 +1069,7 @@ with app.app_context():
     try:
         db.create_all()
         print("✅ Database tables created/verified successfully.")
+        print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
