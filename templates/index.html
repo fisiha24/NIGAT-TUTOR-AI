@@ -265,10 +265,10 @@
             display: flex;
             gap: 10px;
             margin-top: 15px;
-            align-items: center;
+            align-items: flex-start;
         }
 
-        .chat-input input {
+        .chat-input textarea {
             flex: 1;
             padding: 14px 20px;
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -277,13 +277,18 @@
             background: rgba(255, 255, 255, 0.06);
             color: #ffffff;
             transition: all 0.3s ease;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 50px;
+            max-height: 200px;
+            line-height: 1.5;
         }
 
-        .chat-input input::placeholder {
+        .chat-input textarea::placeholder {
             color: rgba(255, 255, 255, 0.35);
         }
 
-        .chat-input input:focus {
+        .chat-input textarea:focus {
             outline: none;
             border-color: rgba(79, 172, 254, 0.4);
             background: rgba(255, 255, 255, 0.08);
@@ -574,7 +579,7 @@
                 flex-wrap: wrap;
             }
 
-            .chat-input input {
+            .chat-input textarea {
                 flex: 1 1 100%;
                 order: 1;
             }
@@ -659,7 +664,9 @@
 
                 <!-- ===== CHAT INPUT ===== -->
                 <div class="chat-input">
-                    <input type="text" id="user-input" placeholder="Ask anything..." onkeypress="if(event.key==='Enter') sendMessage()">
+                    <textarea id="user-input" placeholder="Ask anything..." 
+                        onkeypress="if(event.key==='Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
+                        rows="1"></textarea>
 
                     <!-- ===== + PLUS BUTTON ===== -->
                     <div class="dropdown-container">
@@ -733,6 +740,15 @@
     <!-- JAVASCRIPT -->
     <!-- ============================================================ -->
     <script>
+        // ===== AUTO-EXPAND TEXTAREA =====
+        document.addEventListener('DOMContentLoaded', function() {
+            const textarea = document.getElementById('user-input');
+            textarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+            });
+        });
+
         // ===== DROPDOWN TOGGLE =====
         function toggleDropdown() {
             const menu = document.getElementById('dropdownMenu');
@@ -753,6 +769,10 @@
             messages.innerHTML = `<p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>`;
             document.getElementById('user-input').value = '';
             document.getElementById('dropdownMenu').classList.remove('show');
+            // Reset textarea height
+            const textarea = document.getElementById('user-input');
+            textarea.style.height = 'auto';
+            textarea.style.height = '50px';
         }
 
         // ===== UPLOAD PDF (የተሻሻለ - Wait message) =====
@@ -877,6 +897,10 @@
                     voiceBtn.classList.remove('recording');
                     voiceBtn.textContent = '🎤';
                     isRecording = false;
+                    // Auto-expand textarea after voice input
+                    const textarea = document.getElementById('user-input');
+                    textarea.style.height = 'auto';
+                    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
                     sendMessage();
                 };
 
@@ -957,6 +981,9 @@
             messages.innerHTML += `<div class="user-msg"><strong>You:</strong> ${query}</div>`;
             messages.innerHTML += `<div class="loading">🤔 Thinking...</div>`;
             input.value = '';
+            // Reset textarea height
+            input.style.height = 'auto';
+            input.style.height = '50px';
             messages.scrollTop = messages.scrollHeight;
 
             fetch('/ask_ai', {
