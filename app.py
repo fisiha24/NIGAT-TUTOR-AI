@@ -44,12 +44,15 @@ db = SQLAlchemy(app)
 # ================================================================
 
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
-GROQ_MODEL = "llama3-70b-8192"  # ወይም "mixtral-8x7b-32768", "gemma2-9b-it"
+# ✅ የተሻሻለ ሞዴል - ጡረታ ያልወጣ
+GROQ_MODEL = "llama-3.3-70b-versatile"  # ወይም "mixtral-8x7b-32768", "gemma2-9b-it"
 
 # Initialize Groq client
 groq_client = None
 if GROQ_API_KEY:
     groq_client = Groq(api_key=GROQ_API_KEY)
+else:
+    print("⚠️ GROQ_API_KEY not set. Please set it in environment variables.")
 
 # ================================================================
 # WEB SEARCH FUNCTION
@@ -146,6 +149,23 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
         
     except Exception as e:
         print(f"⚠️ Groq API error: {e}")
+        # ተጨማሪ ሞዴሎችን ለመሞከር አማራጭ (fallback)
+        fallback_models = ["mixtral-8x7b-32768", "gemma2-9b-it"]
+        for model in fallback_models:
+            try:
+                completion = groq_client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": full_prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=2048,
+                    top_p=0.95
+                )
+                return completion.choices[0].message.content
+            except:
+                continue
         return f"⚠️ Error generating response: {str(e)}"
 
 # ================================================================
@@ -1384,6 +1404,7 @@ with app.app_context():
         print("✅ Database tables created/verified successfully.")
         print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
         print(f"🤖 Groq API: {'✅ Configured' if GROQ_API_KEY else '❌ Not configured'}")
+        print(f"🧠 Groq Model: {GROQ_MODEL}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
         print(f"🌐 Web search: ✅ Enabled")
