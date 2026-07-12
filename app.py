@@ -46,6 +46,7 @@ db = SQLAlchemy(app)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 # ✅ የተሻሻለ ሞዴል - ጡረታ ያልወጣ
 GROQ_MODEL = "llama-3.3-70b-versatile"  # ወይም "mixtral-8x7b-32768", "gemma2-9b-it"
+FALLBACK_MODELS = ["mixtral-8x7b-32768", "gemma2-9b-it"]
 
 # Initialize Groq client
 groq_client = None
@@ -85,11 +86,11 @@ def format_search_results(results):
     return "\n".join(formatted)
 
 # ================================================================
-# AI RESPONSE FUNCTION (Groq + Web Search)
+# AI RESPONSE FUNCTION (Groq + Web Search + Fallback)
 # ================================================================
 
 def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False):
-    """Get AI response using Groq with optional web search"""
+    """Get AI response using Groq with optional web search and fallback models"""
     
     if not groq_client:
         return "⚠️ Groq API key is not set. Please add GROQ_API_KEY to environment variables."
@@ -131,42 +132,29 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
         f"=== USER QUESTION ===\n{user_query}"
     )
     
-    try:
-        # Get response from Groq
-        completion = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_prompt}
-            ],
-            temperature=0.1,
-            max_tokens=2048,
-            top_p=0.95
-        )
-        
-        response = completion.choices[0].message.content
-        return response
-        
-    except Exception as e:
-        print(f"⚠️ Groq API error: {e}")
-        # ተጨማሪ ሞዴሎችን ለመሞከር አማራጭ (fallback)
-        fallback_models = ["mixtral-8x7b-32768", "gemma2-9b-it"]
-        for model in fallback_models:
-            try:
-                completion = groq_client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": full_prompt}
-                    ],
-                    temperature=0.1,
-                    max_tokens=2048,
-                    top_p=0.95
-                )
-                return completion.choices[0].message.content
-            except:
-                continue
-        return f"⚠️ Error generating response: {str(e)}"
+    # Try primary model first
+    models_to_try = [GROQ_MODEL] + FALLBACK_MODELS
+    
+    for model in models_to_try:
+        try:
+            completion = groq_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": full_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=2048,
+                top_p=0.95
+            )
+            response = completion.choices[0].message.content
+            print(f"✅ Response received from {model}")
+            return response
+        except Exception as e:
+            print(f"⚠️ Error with {model}: {str(e)}")
+            continue
+    
+    return f"⚠️ All models failed. Please try again later or check your Groq API key."
 
 # ================================================================
 # PROMPT MANAGEMENT
@@ -1404,7 +1392,8 @@ with app.app_context():
         print("✅ Database tables created/verified successfully.")
         print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
         print(f"🤖 Groq API: {'✅ Configured' if GROQ_API_KEY else '❌ Not configured'}")
-        print(f"🧠 Groq Model: {GROQ_MODEL}")
+        print(f"🧠 Primary Groq Model: {GROQ_MODEL}")
+        print(f"🔄 Fallback Models: {FALLBACK_MODELS}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
         print(f"🌐 Web search: ✅ Enabled")
