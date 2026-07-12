@@ -2,15 +2,13 @@ Flask
 Flask-SQLAlchemy
 Flask-Admin
 groq
+duckduckgo-search
 gunicorn
-PyPDF2
 pdfplumber
 Pillow
-pytesseract
 beautifulsoup4
 requests
-googlesearch-python
 python-docx
 sentence-transformers
-numpy
 faiss-cpu
+numpy
