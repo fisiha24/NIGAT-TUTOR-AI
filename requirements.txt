@@ -12,3 +12,6 @@ python-docx
 sentence-transformers
 faiss-cpu
 numpy
+googlesearch-python
+beautifulsoup4
+lxml
