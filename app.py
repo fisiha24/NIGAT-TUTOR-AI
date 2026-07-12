@@ -15,6 +15,7 @@ from io import BytesIO
 from docx import Document
 from groq import Groq
 from duckduckgo_search import DDGS
+from googlesearch import search as google_search  # አዲስ: Google Search fallback
 
 # ================================================================
 # APP CONFIGURATION
@@ -44,36 +45,72 @@ db = SQLAlchemy(app)
 # ================================================================
 
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
-# ✅ የተሻሻለ ሞዴል - ጡረታ ያልወጣ
-GROQ_MODEL = "llama-3.3-70b-versatile"  # ወይም "mixtral-8x7b-32768", "gemma2-9b-it"
-FALLBACK_MODELS = ["mixtral-8x7b-32768", "gemma2-9b-it"]
+GROQ_MODEL = "llama-3.3-70b-versatile"
+FALLBACK_MODELS = ["mixtral-8x7b-32768", "gemma2-9b-it", "llama-3.1-8b-instant"]
 
-# Initialize Groq client
 groq_client = None
 if GROQ_API_KEY:
-    groq_client = Groq(api_key=GROQ_API_KEY)
+    try:
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        print("✅ Groq client initialized successfully")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize Groq client: {e}")
 else:
     print("⚠️ GROQ_API_KEY not set. Please set it in environment variables.")
 
 # ================================================================
-# WEB SEARCH FUNCTION
+# WEB SEARCH FUNCTION (DuckDuckGo + Google Fallback)
 # ================================================================
 
 def web_search(query, max_results=5):
-    """Search the web using DuckDuckGo"""
+    """Search the web using DuckDuckGo with Google fallback"""
+    results = []
+    
+    # መጀመሪያ DuckDuckGo ን ሞክር
     try:
         with DDGS() as ddgs:
-            results = []
             for r in ddgs.text(query, max_results=max_results):
                 results.append({
                     'title': r.get('title', ''),
                     'body': r.get('body', ''),
                     'href': r.get('href', '')
                 })
-            return results
+            if results:
+                print(f"✅ DuckDuckGo returned {len(results)} results")
+                return results
     except Exception as e:
-        print(f"⚠️ Web search error: {e}")
-        return []
+        print(f"⚠️ DuckDuckGo search failed: {e}")
+    
+    # DuckDuckGo ካልሰራ Google Search ን ሞክር (fallback)
+    try:
+        print("🔄 Trying Google Search as fallback...")
+        search_results = list(google_search(query, num_results=max_results))
+        for url in search_results:
+            # ገፆቹን ለማንበብ ቀላል ሙከራ
+            try:
+                response = requests.get(url, timeout=10)
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # የገፁን ርዕስ እና የመጀመሪያውን ጽሁፍ አውጣ
+                title = soup.title.string if soup.title else url
+                body = ' '.join([p.get_text() for p in soup.find_all('p')[:3]])[:500]
+                results.append({
+                    'title': title,
+                    'body': body,
+                    'href': url
+                })
+            except:
+                results.append({
+                    'title': f"Result from {url[:50]}...",
+                    'body': f"See: {url}",
+                    'href': url
+                })
+        print(f"✅ Google Search returned {len(results)} results")
+        return results
+    except Exception as e:
+        print(f"⚠️ Google Search also failed: {e}")
+    
+    return results
 
 def format_search_results(results):
     """Format search results for context"""
@@ -107,7 +144,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     # Add document context if available
     if context_chunks:
         context_text += "\n=== DOCUMENT CONTEXT ===\n"
-        context_text += "\n\n---\n\n".join(context_chunks[:5])  # Limit to 5 chunks
+        context_text += "\n\n---\n\n".join(context_chunks[:5])
     
     # Add web search results if requested
     if use_web_search:
@@ -117,7 +154,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
             context_text += format_search_results(search_results)
     
     if not context_text.strip():
-        context_text = "No context available. Please provide more information."
+        context_text = "No context available. Please upload a document or enable web search for specific information."
     
     # Detect prompt type
     prompt_type = detect_prompt_type(user_query)
@@ -137,6 +174,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     
     for model in models_to_try:
         try:
+            print(f"🤖 Trying model: {model}")
             completion = groq_client.chat.completions.create(
                 model=model,
                 messages=[
@@ -147,14 +185,20 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                 max_tokens=2048,
                 top_p=0.95
             )
+            
             response = completion.choices[0].message.content
-            print(f"✅ Response received from {model}")
+            print(f"✅ Success with model: {model}")
             return response
+            
         except Exception as e:
-            print(f"⚠️ Error with {model}: {str(e)}")
+            error_msg = str(e)
+            print(f"⚠️ Model {model} failed: {error_msg[:100]}")
+            if "decommissioned" in error_msg:
+                print(f"⏭️ Model {model} is decommissioned, trying next...")
+                continue
             continue
     
-    return f"⚠️ All models failed. Please try again later or check your Groq API key."
+    return "⚠️ All available models failed. Please try again later or check your Groq API key."
 
 # ================================================================
 # PROMPT MANAGEMENT
@@ -164,13 +208,13 @@ def detect_prompt_type(query):
     query_lower = query.lower()
     if any(w in query_lower for w in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
         return 'daily_lesson'
-    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly', 'ዓመታዊ']):
+    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly']):
         return 'annual_plan'
-    elif any(w in query_lower for w in ['semester', 'ሴሚስተር', 'sem']):
+    elif any(w in query_lower for w in ['semester', 'ሴሚስተር']):
         return 'semester_plan'
-    elif any(w in query_lower for w in ['monthly', 'ወርሃዊ', 'month']):
+    elif any(w in query_lower for w in ['monthly', 'ወርሃዊ']):
         return 'monthly_plan'
-    elif any(w in query_lower for w in ['weekly', 'ሳምንታዊ', 'week']):
+    elif any(w in query_lower for w in ['weekly', 'ሳምንታዊ']):
         return 'weekly_plan'
     elif any(w in query_lower for w in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
         return 'exam'
@@ -181,17 +225,75 @@ def detect_prompt_type(query):
 def get_prompt_template(prompt_type):
     templates = {
         'daily_lesson': """
-=== DAILY LESSON PLAN ===
-Generate a complete daily lesson plan with this structure:
+=== የተሻሻለ የዕለት ትምህርት እቅድ (DETAILED DAILY LESSON PLAN) ===
 
-1. SCHOOL INFORMATION: School Name, Teacher Name, Grade/Section, Subject, Date, Unit, Topic, Page
-2. LESSON OVERVIEW: Rationale, Prerequisites, Competencies (3-5 bullet points)
-3. LESSON STAGES: A table with: Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment
-4. SUPPORT FOR LEARNERS: Table with: Category (Slow/Medium/Fast) | Support Strategies
-5. APPROVALS: Table with: Role | Name | Signature | Date
-6. TEACHER'S SELF-ASSESSMENT: Brief reflection
+Generate a COMPLETE and DETAILED daily lesson plan with this structure.
+Use information from the provided context (document or web search) to fill in the content.
+If the context contains specific information about the topic, use it directly.
 
-Use information from the provided context to fill in the content.
+STRUCTURE:
+
+1. SCHOOL INFORMATION:
+   - School Name: [የትምህርት ቤት ስም]
+   - Teacher Name: [የመምህር ስም]
+   - Grade/Section: [ክፍል እና ክፍለ-ክፍል]
+   - Subject: [ትምህርት]
+   - Date: [ቀን]
+   - Unit: [ክፍል/Unit]
+   - Topic: [ርእስ/ርዕስ]
+   - Page: [ገጽ ቁጥር]
+
+2. LESSON OBJECTIVES (ትምህርታዊ ዓላማዎች):
+   - At least 3-5 specific, measurable objectives
+   - Use Bloom's Taxonomy verbs
+
+3. RATIONALE (የትምህርቱ አስፈላጊነት):
+   - Why this lesson is important
+   - Connection to previous and future lessons
+
+4. PREREQUISITES (ቅድመ እውቀት):
+   - What students should already know
+
+5. COMPETENCIES (ብቃቶች):
+   - 3-5 specific competencies students will demonstrate
+
+6. LESSON STAGES (የትምህርት ደረጃዎች):
+   A DETAILED TABLE with:
+   | Stage | Time (minutes) | Teacher Activities | Student Activities | Methodology | Assessment |
+   |-------|---------------|-------------------|-------------------|-------------|------------|
+   | Introduction | 5-10 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
+   | Presentation | 15-20 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
+   | Practice | 15-20 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
+   | Production | 10-15 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
+   | Conclusion | 5-10 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
+
+7. TEACHING AIDS (የማስተማር መሳሪያዎች):
+   - List all materials, visual aids, technology needed
+
+8. SUPPORT FOR LEARNERS (ለተማሪዎች ድጋፍ):
+   | Category | Support Strategies |
+   |----------|-------------------|
+   | Slow Learners | [Specific strategies] |
+   | Medium Learners | [Specific strategies] |
+   | Fast Learners | [Specific strategies] |
+
+9. ASSESSMENT (ምዘና):
+   - Formative: [How to assess during lesson]
+   - Summative: [How to assess at end]
+
+10. APPROVALS:
+    | Role | Name | Signature | Date |
+    |------|------|-----------|------|
+    | Teacher | [Name] | | |
+    | Department Head | [Name] | | |
+    | Principal | [Name] | | |
+
+11. TEACHER'S SELF-ASSESSMENT (የመምህር ራስን መገምገም):
+    - What went well
+    - What could be improved
+    - Notes for next lesson
+
+IMPORTANT: If the context has specific information, use it directly. If not, create a comprehensive, realistic lesson plan based on general knowledge.
 """,
         'annual_plan': """
 === ANNUAL LESSON PLAN ===
@@ -315,7 +417,6 @@ def extract_pdf_text_streaming(filepath):
         
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
-            # Process up to 50 pages
             max_pages = min(total_pages, 50)
             
             for i in range(max_pages):
@@ -741,7 +842,6 @@ def upload_text():
     if not text:
         return jsonify({'success': False, 'message': 'No text provided.'}), 400
     
-    # Check page count (250 words per page)
     word_count = len(text.split())
     pages = (word_count // 250) + 1
     
@@ -850,7 +950,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (With Web Search)
+# AI CHAT ROUTE (With Web Search + Page Range Detection)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -866,6 +966,16 @@ def ask_ai():
     print(f"📝 User query: {user_query[:100]}...")
     print(f"🌐 Web search: {'Enabled' if use_web_search else 'Disabled'}")
     
+    # 🔹 አዲስ: የገፅ ክልል መለየት (Page Range Detection)
+    page_range = None
+    page_pattern = r'(?:ከገፅ|from page|pages?)\s*(\d+)\s*(?:እስከ|to|-)\s*(\d+)'
+    match = re.search(page_pattern, user_query.lower())
+    if match:
+        start_page = int(match.group(1))
+        end_page = int(match.group(2))
+        page_range = (start_page, end_page)
+        print(f"📄 Page range detected: {start_page} - {end_page}")
+    
     session_id = session.get('session_id')
     
     # Get relevant chunks from document if available
@@ -880,9 +990,16 @@ def ask_ai():
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
-    # If web search is enabled or no document context, use web search
-    if use_web_search or not relevant_chunks:
+    # 🔹 ዋና ማሻሻያ: ሁልጊዜ Web Search ያንቃ (ሰነድ ባይኖርም)
+    if not relevant_chunks and not use_web_search:
         use_web_search = True
+        print("🌐 Auto-enabling web search (no document context)")
+    elif use_web_search:
+        print("🌐 Web search explicitly enabled")
+    else:
+        # ሰነድ ካለ, ግን ተጠቃሚው ከተወሰነ ገፅ መረጃ እንዲያገኝ ከፈለገ
+        if page_range:
+            print(f"📄 Filtering for page range: {page_range[0]} - {page_range[1]}")
     
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
@@ -901,7 +1018,12 @@ def ask_ai():
         "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
         "=== WEB SEARCH ===\n"
         f"Web search is {'ENABLED' if use_web_search else 'DISABLED'} for this query.\n"
+        "If web search is enabled, use the search results to provide accurate, up-to-date information.\n"
     )
+    
+    # የገፅ ክልል መረጃ ቢኖር ለAI እንዲያውቅ
+    if page_range:
+        system_prompt += f"\n=== PAGE RANGE ===\nThe user is asking for information specifically from pages {page_range[0]} to {page_range[1]}. Please focus on this range if the document has page numbers.\n"
     
     answer = get_ai_response(
         system_prompt, 
@@ -1392,11 +1514,11 @@ with app.app_context():
         print("✅ Database tables created/verified successfully.")
         print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
         print(f"🤖 Groq API: {'✅ Configured' if GROQ_API_KEY else '❌ Not configured'}")
-        print(f"🧠 Primary Groq Model: {GROQ_MODEL}")
-        print(f"🔄 Fallback Models: {FALLBACK_MODELS}")
+        print(f"🧠 Groq Model: {GROQ_MODEL}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
-        print(f"🌐 Web search: ✅ Enabled")
+        print(f"🌐 Web search: ✅ Enabled (Auto-enabled for all queries)")
+        print(f"📄 Page range detection: ✅ Enabled")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
