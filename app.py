@@ -15,7 +15,7 @@ from io import BytesIO
 from docx import Document
 from groq import Groq
 from duckduckgo_search import DDGS
-from googlesearch import search as google_search  # አዲስ: Google Search fallback
+from bs4 import BeautifulSoup
 
 # ================================================================
 # APP CONFIGURATION
@@ -59,16 +59,14 @@ else:
     print("⚠️ GROQ_API_KEY not set. Please set it in environment variables.")
 
 # ================================================================
-# WEB SEARCH FUNCTION (DuckDuckGo + Google Fallback)
+# WEB SEARCH FUNCTIONS (DuckDuckGo + Google fallback)
 # ================================================================
 
 def web_search(query, max_results=5):
-    """Search the web using DuckDuckGo with Google fallback"""
-    results = []
-    
-    # መጀመሪያ DuckDuckGo ን ሞክር
+    """Search the web using DuckDuckGo; fallback to Google if needed"""
     try:
         with DDGS() as ddgs:
+            results = []
             for r in ddgs.text(query, max_results=max_results):
                 results.append({
                     'title': r.get('title', ''),
@@ -76,57 +74,85 @@ def web_search(query, max_results=5):
                     'href': r.get('href', '')
                 })
             if results:
-                print(f"✅ DuckDuckGo returned {len(results)} results")
                 return results
     except Exception as e:
-        print(f"⚠️ DuckDuckGo search failed: {e}")
+        print(f"⚠️ DuckDuckGo search error: {e}")
     
-    # DuckDuckGo ካልሰራ Google Search ን ሞክር (fallback)
+    # Fallback: Google search using requests and BeautifulSoup
     try:
-        print("🔄 Trying Google Search as fallback...")
-        search_results = list(google_search(query, num_results=max_results))
-        for url in search_results:
-            # ገፆቹን ለማንበብ ቀላል ሙከራ
-            try:
-                response = requests.get(url, timeout=10)
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(response.text, 'html.parser')
-                # የገፁን ርዕስ እና የመጀመሪያውን ጽሁፍ አውጣ
-                title = soup.title.string if soup.title else url
-                body = ' '.join([p.get_text() for p in soup.find_all('p')[:3]])[:500]
-                results.append({
-                    'title': title,
-                    'body': body,
-                    'href': url
-                })
-            except:
-                results.append({
-                    'title': f"Result from {url[:50]}...",
-                    'body': f"See: {url}",
-                    'href': url
-                })
-        print(f"✅ Google Search returned {len(results)} results")
-        return results
+        return google_search(query, max_results)
     except Exception as e:
-        print(f"⚠️ Google Search also failed: {e}")
-    
+        print(f"⚠️ Google search fallback error: {e}")
+        return []
+
+def google_search(query, max_results=5):
+    """Simple Google search using requests and BeautifulSoup (fallback)"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    url = f"https://www.google.com/search?q={requests.utils.quote(query)}&num={max_results}"
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'html.parser')
+    results = []
+    for g in soup.find_all('div', class_='g'):
+        title_elem = g.find('h3')
+        if not title_elem:
+            continue
+        title = title_elem.get_text()
+        link_elem = g.find('a')
+        if not link_elem:
+            continue
+        href = link_elem.get('href')
+        if not href:
+            continue
+        # Extract snippet
+        snippet_elem = g.find('div', class_='VwiC3b')
+        snippet = snippet_elem.get_text() if snippet_elem else ''
+        results.append({
+            'title': title,
+            'body': snippet,
+            'href': href
+        })
+        if len(results) >= max_results:
+            break
     return results
 
 def format_search_results(results):
     """Format search results for context"""
     if not results:
         return "No web search results available."
-    
     formatted = []
     for i, r in enumerate(results, 1):
         formatted.append(f"[{i}] {r['title']}\n{r['body']}\nSource: {r['href']}\n")
     return "\n".join(formatted)
 
 # ================================================================
+# PAGE RANGE EXTRACTION FROM USER QUERY
+# ================================================================
+
+def extract_page_range(query):
+    """Extract page range like 'from page 10 to 20' or 'pages 5-12'"""
+    pattern = r'(?:from\s+)?pages?\s*([0-9]+)\s*(?:-|to|–)\s*([0-9]+)'
+    match = re.search(pattern, query, re.IGNORECASE)
+    if match:
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if start <= end:
+            return start, end
+    # Also try single page
+    single_pattern = r'page\s*([0-9]+)'
+    match = re.search(single_pattern, query, re.IGNORECASE)
+    if match:
+        p = int(match.group(1))
+        return p, p
+    return None, None
+
+# ================================================================
 # AI RESPONSE FUNCTION (Groq + Web Search + Fallback)
 # ================================================================
 
-def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False):
+def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False, page_range=None):
     """Get AI response using Groq with optional web search and fallback models"""
     
     if not groq_client:
@@ -141,14 +167,21 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     # Build context
     context_text = ""
     
-    # Add document context if available
+    # Add document context if available (filter by page range if specified)
     if context_chunks:
         context_text += "\n=== DOCUMENT CONTEXT ===\n"
+        # If page range is specified, we try to include only those chunks (if we have page numbers)
+        # For simplicity, we just include all chunks and let the model focus on the range if mentioned
         context_text += "\n\n---\n\n".join(context_chunks[:5])
     
     # Add web search results if requested
     if use_web_search:
-        search_results = web_search(user_query)
+        # If page range is specified, we can refine the search query
+        search_query = user_query
+        if page_range:
+            start, end = page_range
+            search_query += f" pages {start} to {end}"
+        search_results = web_search(search_query)
         if search_results:
             context_text += "\n=== WEB SEARCH RESULTS ===\n"
             context_text += format_search_results(search_results)
@@ -158,7 +191,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     
     # Detect prompt type
     prompt_type = detect_prompt_type(user_query)
-    prompt_template = get_prompt_template(prompt_type)
+    prompt_template = get_prompt_template(prompt_type, page_range)
     
     # Build full prompt
     full_prompt = (
@@ -185,11 +218,9 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                 max_tokens=2048,
                 top_p=0.95
             )
-            
             response = completion.choices[0].message.content
             print(f"✅ Success with model: {model}")
             return response
-            
         except Exception as e:
             error_msg = str(e)
             print(f"⚠️ Model {model} failed: {error_msg[:100]}")
@@ -222,145 +253,69 @@ def detect_prompt_type(query):
         return 'summary'
     return 'general'
 
-def get_prompt_template(prompt_type):
-    templates = {
-        'daily_lesson': """
-=== የተሻሻለ የዕለት ትምህርት እቅድ (DETAILED DAILY LESSON PLAN) ===
-
+def get_prompt_template(prompt_type, page_range=None):
+    page_info = ""
+    if page_range:
+        start, end = page_range
+        page_info = f" (focus on content from pages {start} to {end})"
+    
+    base_templates = {
+        'daily_lesson': f"""
+=== DETAILED DAILY LESSON PLAN {page_info} ===
 Generate a COMPLETE and DETAILED daily lesson plan with this structure.
 Use information from the provided context (document or web search) to fill in the content.
 If the context contains specific information about the topic, use it directly.
 
 STRUCTURE:
 
-1. SCHOOL INFORMATION:
-   - School Name: [የትምህርት ቤት ስም]
-   - Teacher Name: [የመምህር ስም]
-   - Grade/Section: [ክፍል እና ክፍለ-ክፍል]
-   - Subject: [ትምህርት]
-   - Date: [ቀን]
-   - Unit: [ክፍል/Unit]
-   - Topic: [ርእስ/ርዕስ]
-   - Page: [ገጽ ቁጥር]
-
-2. LESSON OBJECTIVES (ትምህርታዊ ዓላማዎች):
-   - At least 3-5 specific, measurable objectives
-   - Use Bloom's Taxonomy verbs
-
-3. RATIONALE (የትምህርቱ አስፈላጊነት):
-   - Why this lesson is important
-   - Connection to previous and future lessons
-
-4. PREREQUISITES (ቅድመ እውቀት):
-   - What students should already know
-
-5. COMPETENCIES (ብቃቶች):
-   - 3-5 specific competencies students will demonstrate
-
-6. LESSON STAGES (የትምህርት ደረጃዎች):
-   A DETAILED TABLE with:
-   | Stage | Time (minutes) | Teacher Activities | Student Activities | Methodology | Assessment |
-   |-------|---------------|-------------------|-------------------|-------------|------------|
-   | Introduction | 5-10 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
-   | Presentation | 15-20 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
-   | Practice | 15-20 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
-   | Production | 10-15 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
-   | Conclusion | 5-10 | [Detailed teacher actions] | [Detailed student actions] | [Method] | [How to assess] |
-
-7. TEACHING AIDS (የማስተማር መሳሪያዎች):
-   - List all materials, visual aids, technology needed
-
-8. SUPPORT FOR LEARNERS (ለተማሪዎች ድጋፍ):
-   | Category | Support Strategies |
-   |----------|-------------------|
-   | Slow Learners | [Specific strategies] |
-   | Medium Learners | [Specific strategies] |
-   | Fast Learners | [Specific strategies] |
-
-9. ASSESSMENT (ምዘና):
-   - Formative: [How to assess during lesson]
-   - Summative: [How to assess at end]
-
-10. APPROVALS:
-    | Role | Name | Signature | Date |
-    |------|------|-----------|------|
-    | Teacher | [Name] | | |
-    | Department Head | [Name] | | |
-    | Principal | [Name] | | |
-
-11. TEACHER'S SELF-ASSESSMENT (የመምህር ራስን መገምገም):
-    - What went well
-    - What could be improved
-    - Notes for next lesson
-
-IMPORTANT: If the context has specific information, use it directly. If not, create a comprehensive, realistic lesson plan based on general knowledge.
+1. SCHOOL INFORMATION: School Name, Teacher Name, Grade/Section, Subject, Date, Unit, Topic, Page
+2. LESSON OBJECTIVES: At least 3-5 specific, measurable objectives (Bloom's Taxonomy)
+3. RATIONALE: Why this lesson is important, connection to previous/future lessons
+4. PREREQUISITES: What students should already know
+5. COMPETENCIES: 3-5 specific competencies students will demonstrate
+6. LESSON STAGES: A DETAILED TABLE with: Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment
+7. TEACHING AIDS: List all materials, visual aids, technology needed
+8. SUPPORT FOR LEARNERS: Table with: Category (Slow/Medium/Fast) | Support Strategies
+9. ASSESSMENT: Formative and Summative
+10. APPROVALS: Table with: Role | Name | Signature | Date
+11. TEACHER'S SELF-ASSESSMENT: What went well, what could be improved
 """,
-        'annual_plan': """
-=== ANNUAL LESSON PLAN ===
+        'annual_plan': f"""
+=== ANNUAL LESSON PLAN {page_info} ===
 Generate an annual lesson plan with this structure:
-
-1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Academic Year
+1. SCHOOL INFORMATION
 2. TABLE: Month | Week | Topics | Objectives | Methodology | Evaluation
-
-Use information from the provided context.
 """,
-        'semester_plan': """
-=== SEMESTER LESSON PLAN ===
-Generate a semester lesson plan with this structure:
-
-1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Semester
+        'semester_plan': f"""
+=== SEMESTER LESSON PLAN {page_info} ===
+1. SCHOOL INFORMATION
 2. TABLE: Week | Topic | Objectives | Activities | Assessment
-
-Use information from the provided context.
 """,
-        'monthly_plan': """
-=== MONTHLY LESSON PLAN ===
-Generate a monthly lesson plan with this structure:
-
-1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Month
+        'monthly_plan': f"""
+=== MONTHLY LESSON PLAN {page_info} ===
+1. SCHOOL INFORMATION
 2. TABLE: Week | Topic | Objectives | Activities | Resources
-
-Use information from the provided context.
 """,
-        'weekly_plan': """
-=== WEEKLY LESSON PLAN ===
-Generate a weekly lesson plan with this structure:
-
-1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Week
+        'weekly_plan': f"""
+=== WEEKLY LESSON PLAN {page_info} ===
+1. SCHOOL INFORMATION
 2. TABLE: Day | Topic | Objectives | Activities | Homework
-
-Use information from the provided context.
 """,
-        'exam': """
-=== EXAM GENERATOR ===
+        'exam': f"""
+=== EXAM GENERATOR {page_info} ===
 Generate exam questions based on the provided content.
-Include:
-- Multiple choice questions (4 options each) - at least 10
-- True/False questions - at least 5
-- Short answer questions - at least 5
-- Essay questions - at least 2
-
-Use the context to create accurate, relevant questions.
+Include: Multiple choice (≥10), True/False (≥5), Short answer (≥5), Essay (≥2).
 """,
-        'summary': """
-=== SUMMARY GENERATOR ===
-Create a comprehensive summary of the provided content.
-Include:
-- Main topics and key points
-- Important concepts
-- Key terms and definitions
-- Study tips
-
-Keep the summary well-structured and easy to read.
+        'summary': f"""
+=== SUMMARY GENERATOR {page_info} ===
+Create a comprehensive summary: main topics, key points, important concepts, key terms, study tips.
 """,
-        'general': """
-=== GENERAL ASSISTANCE ===
-Answer the user's question based on the provided context.
-Be helpful, accurate, and cite specific information from the context.
-If the context doesn't contain the answer, say so clearly.
+        'general': f"""
+=== GENERAL ASSISTANCE {page_info} ===
+Answer the user's question based on the provided context. Be helpful, accurate, and cite specific information.
 """
     }
-    return templates.get(prompt_type, templates['general'])
+    return base_templates.get(prompt_type, base_templates['general'])
 
 # ================================================================
 # HELPER FUNCTIONS
@@ -390,20 +345,6 @@ def remove_duplicate_sentences(text):
             unique.append(s)
     return ' '.join(unique)
 
-def count_pages(text):
-    """Count approximate pages (250 words per page)"""
-    word_count = len(text.split())
-    return max(1, (word_count // 250) + 1)
-
-def chunk_text(text, chunk_size=500, overlap=50):
-    """Chunk text into smaller pieces"""
-    words = text.split()
-    chunks = []
-    for i in range(0, len(words), chunk_size - overlap):
-        chunk = ' '.join(words[i:i + chunk_size])
-        chunks.append(chunk)
-    return chunks
-
 # ================================================================
 # MEMORY OPTIMIZED PDF EXTRACTION (50 Pages)
 # ================================================================
@@ -414,6 +355,7 @@ def extract_pdf_text_streaming(filepath):
         import pdfplumber
         text_parts = []
         total_pages = 0
+        page_texts = []  # store each page text with page number
         
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
@@ -424,15 +366,16 @@ def extract_pdf_text_streaming(filepath):
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
+                    page_texts.append((i+1, page_text))  # store page number and text
                 page = None
                 if (i + 1) % 10 == 0:
                     print(f"📄 Extracted page {i+1}/{max_pages}")
         
         full_text = "\n\n".join(text_parts)
         text_parts = None
-        return full_text, max_pages if full_text else "No text found in PDF.", 0
+        return full_text, max_pages if full_text else "No text found in PDF.", 0, page_texts
     except Exception as e:
-        return f"PDF extraction error: {str(e)}", 0
+        return f"PDF extraction error: {str(e)}", 0, []
 
 # ================================================================
 # EMBEDDING MODEL (Singleton)
@@ -471,13 +414,14 @@ def get_embedding(text):
         return np.zeros(384)
 
 # ================================================================
-# MEMORY OPTIMIZED RAG SYSTEM
+# MEMORY OPTIMIZED RAG SYSTEM (with page numbers)
 # ================================================================
 
 class EnterpriseRAG:
     def __init__(self):
         self.doc_metadata = {}
         self.chunk_texts = {}
+        self.chunk_pages = {}  # store page number for each chunk
         self.faiss_indexes = {}
         self.chunk_size = 300
         self.overlap = 50
@@ -488,6 +432,110 @@ class EnterpriseRAG:
     
     def get_metadata_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}_meta.pkl")
+    
+    def _chunk_text_with_pages(self, text, page_texts):
+        """Split text into chunks and assign page numbers"""
+        # page_texts is list of (page_num, page_text)
+        # We need to split text into chunks and map to page numbers
+        # Simple approach: concatenate page texts and then split; track which page each chunk belongs to
+        chunks = []
+        chunk_pages = []
+        current_page = 1
+        current_text = ""
+        for page_num, page_text in page_texts:
+            # Append page text with a marker
+            if current_text:
+                current_text += "\n\n"
+            current_text += f"[PAGE {page_num}]\n" + page_text
+            # Split current_text into chunks if it exceeds chunk_size
+            words = current_text.split()
+            while len(words) > self.chunk_size:
+                chunk_words = words[:self.chunk_size]
+                chunk = ' '.join(chunk_words)
+                chunks.append(chunk)
+                # Determine page number for this chunk: find the last [PAGE X] marker
+                # Extract page numbers from chunk
+                pages_in_chunk = re.findall(r'\[PAGE (\d+)\]', chunk)
+                if pages_in_chunk:
+                    # Use the last page number in chunk
+                    chunk_pages.append(int(pages_in_chunk[-1]))
+                else:
+                    chunk_pages.append(current_page)
+                words = words[self.chunk_size - self.overlap:]
+                current_text = ' '.join(words)
+            # After processing, keep remaining text for next page
+            current_text = ' '.join(words)
+            current_page = page_num
+        # Final chunks
+        if current_text.strip():
+            chunks.append(current_text)
+            pages_in_chunk = re.findall(r'\[PAGE (\d+)\]', current_text)
+            if pages_in_chunk:
+                chunk_pages.append(int(pages_in_chunk[-1]))
+            else:
+                chunk_pages.append(current_page)
+        return chunks, chunk_pages
+    
+    def store_document(self, session_id, text, filename, pages=0, page_texts=None):
+        self.doc_metadata[session_id] = {
+            'filename': filename,
+            'pages': pages,
+            'word_count': len(text.split()),
+            'chunk_count': 0
+        }
+        
+        try:
+            import faiss
+            embedding_dim = 384
+            faiss_index = faiss.IndexFlatIP(embedding_dim)
+        except ImportError:
+            faiss_index = None
+        
+        chunks = []
+        chunk_pages = []
+        if page_texts:
+            chunks, chunk_pages = self._chunk_text_with_pages(text, page_texts)
+        else:
+            # Fallback: chunk without page info
+            for chunk in self._chunk_text_streaming(text):
+                chunks.append(chunk)
+                chunk_pages.append(None)  # unknown page
+        
+        # Store chunks and pages
+        self.chunk_texts[session_id] = chunks
+        self.chunk_pages[session_id] = chunk_pages
+        self.doc_metadata[session_id]['chunk_count'] = len(chunks)
+        
+        # Build FAISS index
+        embeddings = []
+        for chunk in chunks:
+            emb = get_embedding(chunk)
+            embeddings.append(emb)
+            if faiss_index is not None and len(embeddings) >= 30:
+                emb_array = np.array(embeddings).astype('float32')
+                faiss_index.add(emb_array)
+                embeddings = []
+                import gc; gc.collect()
+        if embeddings and faiss_index is not None:
+            emb_array = np.array(embeddings).astype('float32')
+            faiss_index.add(emb_array)
+        
+        if faiss_index is not None:
+            faiss_path = self.get_index_path(session_id)
+            faiss.write_index(faiss_index, faiss_path)
+            self.faiss_indexes[session_id] = faiss_index
+        
+        # Save metadata with page info
+        meta_path = self.get_metadata_path(session_id)
+        with open(meta_path, 'wb') as f:
+            pickle.dump({
+                'chunks': chunks,
+                'chunk_pages': chunk_pages,
+                'metadata': self.doc_metadata[session_id]
+            }, f)
+        
+        print(f"📚 Stored {len(chunks)} chunks with page info")
+        return len(chunks)
     
     def _chunk_text_streaming(self, text):
         words = text.split()
@@ -505,61 +553,19 @@ class EnterpriseRAG:
             if end >= total_words:
                 break
     
-    def store_document(self, session_id, text, filename, pages=0):
-        self.doc_metadata[session_id] = {
-            'filename': filename,
-            'pages': pages,
-            'word_count': len(text.split()),
-            'chunk_count': 0
-        }
-        
-        try:
-            import faiss
-            embedding_dim = 384
-            faiss_index = faiss.IndexFlatIP(embedding_dim)
-        except ImportError:
-            faiss_index = None
-        
-        chunks = []
-        embeddings = []
-        chunk_count = 0
-        
-        for chunk_text in self._chunk_text_streaming(text):
-            chunks.append(chunk_text)
-            emb = get_embedding(chunk_text)
-            embeddings.append(emb)
-            chunk_count += 1
-            
-            if faiss_index is not None and len(embeddings) >= 30:
-                if embeddings:
-                    emb_array = np.array(embeddings).astype('float32')
-                    faiss_index.add(emb_array)
-                    embeddings = []
-                    import gc
-                    gc.collect()
-        
-        if embeddings and faiss_index is not None:
-            emb_array = np.array(embeddings).astype('float32')
-            faiss_index.add(emb_array)
-            embeddings = None
-        
-        self.chunk_texts[session_id] = chunks
-        self.doc_metadata[session_id]['chunk_count'] = len(chunks)
-        
-        if faiss_index is not None:
-            faiss_path = self.get_index_path(session_id)
-            faiss.write_index(faiss_index, faiss_path)
-            self.faiss_indexes[session_id] = faiss_index
-        
+    def _load_metadata(self, session_id):
         meta_path = self.get_metadata_path(session_id)
-        with open(meta_path, 'wb') as f:
-            pickle.dump({
-                'chunks': chunks,
-                'metadata': self.doc_metadata[session_id]
-            }, f)
-        
-        print(f"📚 Stored {len(chunks)} chunks")
-        return len(chunks)
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'rb') as f:
+                    data = pickle.load(f)
+                    self.chunk_texts[session_id] = data.get('chunks', [])
+                    self.chunk_pages[session_id] = data.get('chunk_pages', [])
+                    self.doc_metadata[session_id] = data.get('metadata', {})
+                    return data
+            except:
+                pass
+        return None
     
     def _load_faiss_index(self, session_id):
         if session_id in self.faiss_indexes:
@@ -575,28 +581,31 @@ class EnterpriseRAG:
             pass
         return None
     
-    def _load_metadata(self, session_id):
-        meta_path = self.get_metadata_path(session_id)
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, 'rb') as f:
-                    data = pickle.load(f)
-                    self.chunk_texts[session_id] = data.get('chunks', [])
-                    self.doc_metadata[session_id] = data.get('metadata', {})
-                    return data
-            except:
-                pass
-        return None
-    
-    def get_relevant_chunks(self, session_id, query, max_tokens=4000):
+    def get_relevant_chunks(self, session_id, query, max_tokens=4000, page_range=None):
         if session_id not in self.chunk_texts:
             self._load_metadata(session_id)
         
         if session_id not in self.chunk_texts or not self.chunk_texts[session_id]:
             return []
         
-        faiss_index = self._load_faiss_index(session_id)
         chunks = self.chunk_texts[session_id]
+        chunk_pages = self.chunk_pages.get(session_id, [])
+        
+        # If page range is specified, filter chunks by page
+        if page_range:
+            start_page, end_page = page_range
+            filtered = []
+            for i, chunk in enumerate(chunks):
+                if i < len(chunk_pages) and chunk_pages[i] is not None:
+                    if start_page <= chunk_pages[i] <= end_page:
+                        filtered.append(chunk)
+                else:
+                    # If page unknown, include it (fallback)
+                    filtered.append(chunk)
+            if filtered:
+                chunks = filtered
+        
+        faiss_index = self._load_faiss_index(session_id)
         
         if faiss_index is not None:
             try:
@@ -623,6 +632,7 @@ class EnterpriseRAG:
             except:
                 pass
         
+        # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
         for i, chunk in enumerate(chunks[:100]):
@@ -630,7 +640,6 @@ class EnterpriseRAG:
             overlap = len(query_words & chunk_words)
             if overlap > 0:
                 scored.append((overlap, chunk))
-        
         scored.sort(key=lambda x: x[0], reverse=True)
         return [chunk for _, chunk in scored[:4]]
     
@@ -645,6 +654,8 @@ class EnterpriseRAG:
             del self.doc_metadata[session_id]
         if session_id in self.chunk_texts:
             del self.chunk_texts[session_id]
+        if session_id in self.chunk_pages:
+            del self.chunk_pages[session_id]
         if session_id in self.faiss_indexes:
             del self.faiss_indexes[session_id]
         
@@ -658,7 +669,7 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS
+# MODELS (same as before)
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -796,7 +807,7 @@ admin.add_view(ModelView(PeaceClubPlan, db))
 admin.add_view(ModelView(PeaceClubActivity, db))
 
 # ================================================================
-# ROUTES
+# ROUTES (same as before with minor changes)
 # ================================================================
 @app.route('/')
 def home():
@@ -829,36 +840,26 @@ def register():
 def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
-# ================================================================
-# TEXT INPUT ROUTE (Up to 10 pages)
-# ================================================================
-
 @app.route('/upload_text', methods=['POST'])
 def upload_text():
     """Upload text directly (up to 10 pages)"""
     data = request.json
     text = data.get('text', '').strip()
-    
     if not text:
         return jsonify({'success': False, 'message': 'No text provided.'}), 400
-    
     word_count = len(text.split())
     pages = (word_count // 250) + 1
-    
     if pages > 10:
         return jsonify({'success': False, 'message': f'Text exceeds 10 pages ({pages} pages). Please reduce the content.'}), 400
-    
     if 'session_id' not in session:
         session['session_id'] = str(uuid.uuid4())
-    
     session_id = session['session_id']
     filename = f"text_input_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    num_chunks = rag.store_document(session_id, text, filename, pages)
-    
+    # For text, we don't have page numbers, so pass None for page_texts
+    num_chunks = rag.store_document(session_id, text, filename, pages, page_texts=None)
     session['text_filename'] = filename
     session['text_pages'] = pages
     session['text_chunks'] = num_chunks
-    
     return jsonify({
         'success': True,
         'message': f'Text uploaded and indexed! ({pages} pages, {num_chunks} chunks)',
@@ -867,45 +868,32 @@ def upload_text():
         'chunks': num_chunks
     }), 200
 
-# ================================================================
-# UPLOAD ROUTES (PDF - 50 Pages)
-# ================================================================
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded.'}), 400
-    
     file = request.files['file']
     if file.filename == '':
         return jsonify({'success': False, 'message': 'No file selected.'}), 400
-    
     if file and file.filename.lower().endswith('.pdf'):
         try:
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
-            
             file_size = os.path.getsize(filepath) / (1024 * 1024)
-            text, pages = extract_pdf_text_streaming(filepath)
-            
+            text, pages, page_texts = extract_pdf_text_streaming(filepath)
             if not text or text.startswith("PDF extraction error"):
                 return jsonify({'success': False, 'message': f'Error extracting text: {text}'}), 500
-            
             if pages > 50:
                 return jsonify({'success': False, 'message': f'PDF has {pages} pages. Maximum is 50 pages.'}), 400
-            
             if 'session_id' not in session:
                 session['session_id'] = str(uuid.uuid4())
-            
             session_id = session['session_id']
-            num_chunks = rag.store_document(session_id, text, filename, pages)
-            
+            num_chunks = rag.store_document(session_id, text, filename, pages, page_texts)
             session['pdf_filename'] = filename
             session['pdf_size'] = file_size
             session['pdf_pages'] = pages
             session['pdf_chunks'] = num_chunks
-            
             return jsonify({
                 'success': True, 
                 'message': f'PDF uploaded and indexed! ({file_size:.1f}MB, {pages} pages, {num_chunks} chunks)',
@@ -913,7 +901,6 @@ def upload_file():
                 'pages': pages,
                 'chunks': num_chunks
             }), 200
-            
         except Exception as e:
             return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
     else:
@@ -950,7 +937,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (With Web Search + Page Range Detection)
+# AI CHAT ROUTE (With Web Search and Page Range)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -964,42 +951,30 @@ def ask_ai():
     query_lang = detect_language(user_query)
     print(f"🔍 Detected language: {query_lang}")
     print(f"📝 User query: {user_query[:100]}...")
-    print(f"🌐 Web search: {'Enabled' if use_web_search else 'Disabled'}")
     
-    # 🔹 አዲስ: የገፅ ክልል መለየት (Page Range Detection)
-    page_range = None
-    page_pattern = r'(?:ከገፅ|from page|pages?)\s*(\d+)\s*(?:እስከ|to|-)\s*(\d+)'
-    match = re.search(page_pattern, user_query.lower())
-    if match:
-        start_page = int(match.group(1))
-        end_page = int(match.group(2))
-        page_range = (start_page, end_page)
-        print(f"📄 Page range detected: {start_page} - {end_page}")
+    # Extract page range from query
+    start_page, end_page = extract_page_range(user_query)
+    page_range = (start_page, end_page) if start_page is not None else None
+    if page_range:
+        print(f"📄 Page range detected: {start_page} to {end_page}")
     
     session_id = session.get('session_id')
-    
-    # Get relevant chunks from document if available
     relevant_chunks = []
     doc_info = None
     
     if session_id:
-        relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000)
+        relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000, page_range=page_range)
         doc_info = rag.get_document_info(session_id)
         if doc_info:
             print(f"📄 Document: {doc_info.get('filename', 'unknown')} ({doc_info.get('pages', 0)} pages, {doc_info.get('chunk_count', 0)} chunks)")
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
-    # 🔹 ዋና ማሻሻያ: ሁልጊዜ Web Search ያንቃ (ሰነድ ባይኖርም)
+    # Auto-enable web search if no context and it's a lesson plan or general query
+    is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
     if not relevant_chunks and not use_web_search:
         use_web_search = True
-        print("🌐 Auto-enabling web search (no document context)")
-    elif use_web_search:
-        print("🌐 Web search explicitly enabled")
-    else:
-        # ሰነድ ካለ, ግን ተጠቃሚው ከተወሰነ ገፅ መረጃ እንዲያገኝ ከፈለገ
-        if page_range:
-            print(f"📄 Filtering for page range: {page_range[0]} - {page_range[1]}")
+        print("🌐 Auto-enabling web search")
     
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
@@ -1018,18 +993,14 @@ def ask_ai():
         "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
         "=== WEB SEARCH ===\n"
         f"Web search is {'ENABLED' if use_web_search else 'DISABLED'} for this query.\n"
-        "If web search is enabled, use the search results to provide accurate, up-to-date information.\n"
     )
-    
-    # የገፅ ክልል መረጃ ቢኖር ለAI እንዲያውቅ
-    if page_range:
-        system_prompt += f"\n=== PAGE RANGE ===\nThe user is asking for information specifically from pages {page_range[0]} to {page_range[1]}. Please focus on this range if the document has page numbers.\n"
     
     answer = get_ai_response(
         system_prompt, 
         user_query, 
         relevant_chunks if relevant_chunks else None,
-        use_web_search=use_web_search
+        use_web_search=use_web_search,
+        page_range=page_range
     )
     
     if answer:
@@ -1041,7 +1012,7 @@ def ask_ai():
     })
 
 # ================================================================
-# DOWNLOAD WORD
+# DOWNLOAD WORD (same as before)
 # ================================================================
 
 @app.route('/download_word', methods=['POST'])
@@ -1049,28 +1020,21 @@ def download_word():
     data = request.json
     content = data.get('content', '')
     filename = data.get('filename', 'Nigat_AI_Response')
-    
     if not content:
         return jsonify({'error': 'No content to download'}), 400
-    
     try:
         doc = Document()
         doc.add_heading('Nigat AI Tutor Response', 0)
-        
         lines = content.split('\n')
         in_table = False
         table_rows = []
         table_headers = []
-        
         for line in lines:
             line = line.strip()
-            
             if line.startswith('|') and line.endswith('|'):
                 cells = [cell.strip() for cell in line[1:-1].split('|')]
-                
                 if all('---' in cell or ':' in cell for cell in cells):
                     continue
-                
                 if not in_table:
                     in_table = True
                     table_headers = cells
@@ -1079,26 +1043,21 @@ def download_word():
             else:
                 if in_table and table_rows:
                     num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
-                    
                     if num_cols > 0 and table_headers:
                         table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
                         table.style = 'Table Grid'
-                        
                         for i, header in enumerate(table_headers[:num_cols]):
                             cell = table.cell(0, i)
                             cell.text = header
                             for paragraph in cell.paragraphs:
                                 for run in paragraph.runs:
                                     run.bold = True
-                        
                         for row_idx, row in enumerate(table_rows):
                             for col_idx, cell_text in enumerate(row[:num_cols]):
                                 table.cell(row_idx + 1, col_idx).text = cell_text
-                    
                     table_rows = []
                     table_headers = []
                     in_table = False
-                
                 if line:
                     if line.startswith('#'):
                         heading_level = min(len(line) - len(line.lstrip('#')), 6)
@@ -1106,31 +1065,25 @@ def download_word():
                         doc.add_heading(heading_text, level=heading_level)
                     else:
                         doc.add_paragraph(line)
-        
         if in_table and table_rows:
             num_cols = max(len(table_headers), max([len(row) for row in table_rows]) if table_rows else 0)
             if num_cols > 0 and table_headers:
                 table = doc.add_table(rows=1 + len(table_rows), cols=num_cols)
                 table.style = 'Table Grid'
-                
                 for i, header in enumerate(table_headers[:num_cols]):
                     cell = table.cell(0, i)
                     cell.text = header
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             run.bold = True
-                
                 for row_idx, row in enumerate(table_rows):
                     for col_idx, cell_text in enumerate(row[:num_cols]):
                         table.cell(row_idx + 1, col_idx).text = cell_text
-        
         file_stream = BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
-        
         safe_filename = re.sub(r'[^\w\s-]', '', filename)
         safe_filename = re.sub(r'[-\s]+', '_', safe_filename)
-        
         return send_file(
             file_stream,
             as_attachment=True,
@@ -1142,7 +1095,7 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES
+# LESSON PLAN ROUTES (unchanged)
 # ================================================================
 
 @app.route('/lesson')
@@ -1168,7 +1121,6 @@ def annual_plan():
         methodologies = request.form.getlist('methodology[]')
         teaching_aids = request.form.getlist('teaching_aids[]')
         evaluations = request.form.getlist('evaluation[]')
-        
         month_data = []
         for i in range(len(months)):
             month_data.append({
@@ -1183,7 +1135,6 @@ def annual_plan():
                 'teaching_aids': teaching_aids[i],
                 'evaluation': evaluations[i]
             })
-        
         plan = AnnualPlan(
             school_name=request.form.get('school_name'),
             teacher_name=request.form.get('teacher_name'),
@@ -1201,7 +1152,6 @@ def annual_plan():
         db.session.commit()
         flash('Annual plan created successfully!', 'success')
         return redirect(url_for('lesson_home'))
-    
     return render_template('annual_plan_form.html')
 
 @app.route('/lesson/laboratory', methods=['GET', 'POST'])
@@ -1215,7 +1165,6 @@ def laboratory_plan():
         pages = request.form.getlist('page[]')
         months = request.form.getlist('month[]')
         dates = request.form.getlist('date[]')
-        
         experiment_data = []
         for i in range(len(exp_numbers)):
             experiment_data.append({
@@ -1228,7 +1177,6 @@ def laboratory_plan():
                 'month': months[i],
                 'date': dates[i]
             })
-        
         plan = LaboratoryPlan(
             school_name=request.form.get('school_name'),
             teacher_name=request.form.get('teacher_name'),
@@ -1241,7 +1189,6 @@ def laboratory_plan():
         db.session.commit()
         flash('Laboratory plan created successfully!', 'success')
         return redirect(url_for('lesson_home'))
-    
     return render_template('laboratory_plan_form.html')
 
 @app.route('/lesson/daily', methods=['GET', 'POST'])
@@ -1288,11 +1235,10 @@ def daily_plan():
         db.session.commit()
         flash('Daily plan created successfully!', 'success')
         return redirect(url_for('lesson_home'))
-    
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES
+# PEACE CLUB ROUTES (unchanged)
 # ================================================================
 
 @app.route('/peaceclub')
@@ -1323,7 +1269,6 @@ def peaceclub_create():
         )
         db.session.add(plan)
         db.session.flush()
-        
         activity_names = request.form.getlist('activity_name[]')
         hamle_values = request.form.getlist('hamle')
         nehase_values = request.form.getlist('nehase')
@@ -1337,7 +1282,6 @@ def peaceclub_create():
         miazia_values = request.form.getlist('miazia')
         ginbot_values = request.form.getlist('ginbot')
         sene_values = request.form.getlist('sene')
-        
         for i, name in enumerate(activity_names):
             if name.strip():
                 activity = PeaceClubActivity(
@@ -1358,7 +1302,6 @@ def peaceclub_create():
                     sene=str(i) in sene_values
                 )
                 db.session.add(activity)
-        
         student_names = request.form.getlist('student_name[]')
         student_grades = request.form.getlist('student_grade[]')
         student_data = []
@@ -1369,7 +1312,6 @@ def peaceclub_create():
                     'grade': student_grades[i] if i < len(student_grades) else ''
                 })
         plan.student_members = json.dumps(student_data)
-        
         teacher_names = request.form.getlist('teacher_name[]')
         teacher_grades = request.form.getlist('teacher_grade[]')
         teacher_data = []
@@ -1380,11 +1322,9 @@ def peaceclub_create():
                     'grade': teacher_grades[i] if i < len(teacher_grades) else ''
                 })
         plan.teacher_members = json.dumps(teacher_data)
-        
         db.session.commit()
         flash('Peace Club plan created successfully!', 'success')
         return redirect(url_for('peaceclub_home'))
-    
     return render_template('peaceclub_create.html')
 
 @app.route('/peaceclub/view/<int:plan_id>')
@@ -1405,7 +1345,6 @@ def peaceclub_edit(plan_id):
     activities = PeaceClubActivity.query.filter_by(club_plan_id=plan_id).order_by(PeaceClubActivity.activity_number).all()
     student_members = plan.get_student_members()
     teacher_members = plan.get_teacher_members()
-    
     if request.method == 'POST':
         plan.school_name = request.form.get('school_name')
         plan.district = request.form.get('district')
@@ -1423,10 +1362,8 @@ def peaceclub_edit(plan_id):
         plan.opportunities = request.form.get('opportunities')
         plan.challenges = request.form.get('challenges')
         plan.solutions = request.form.get('solutions')
-        
         for activity in activities:
             db.session.delete(activity)
-        
         activity_names = request.form.getlist('activity_name[]')
         hamle_values = request.form.getlist('hamle')
         nehase_values = request.form.getlist('nehase')
@@ -1440,7 +1377,6 @@ def peaceclub_edit(plan_id):
         miazia_values = request.form.getlist('miazia')
         ginbot_values = request.form.getlist('ginbot')
         sene_values = request.form.getlist('sene')
-        
         for i, name in enumerate(activity_names):
             if name.strip():
                 activity = PeaceClubActivity(
@@ -1461,7 +1397,6 @@ def peaceclub_edit(plan_id):
                     sene=str(i) in sene_values
                 )
                 db.session.add(activity)
-        
         student_names = request.form.getlist('student_name[]')
         student_grades = request.form.getlist('student_grade[]')
         student_data = []
@@ -1472,7 +1407,6 @@ def peaceclub_edit(plan_id):
                     'grade': student_grades[i] if i < len(student_grades) else ''
                 })
         plan.student_members = json.dumps(student_data)
-        
         teacher_names = request.form.getlist('teacher_name[]')
         teacher_grades = request.form.getlist('teacher_grade[]')
         teacher_data = []
@@ -1483,11 +1417,9 @@ def peaceclub_edit(plan_id):
                     'grade': teacher_grades[i] if i < len(teacher_grades) else ''
                 })
         plan.teacher_members = json.dumps(teacher_data)
-        
         db.session.commit()
         flash('Peace Club plan updated successfully!', 'success')
         return redirect(url_for('peaceclub_view', plan_id=plan.id))
-    
     return render_template('peaceclub_edit.html', 
                          plan=plan, 
                          activities=activities,
@@ -1517,8 +1449,8 @@ with app.app_context():
         print(f"🧠 Groq Model: {GROQ_MODEL}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
-        print(f"🌐 Web search: ✅ Enabled (Auto-enabled for all queries)")
-        print(f"📄 Page range detection: ✅ Enabled")
+        print(f"🌐 Web search: ✅ Enabled (auto-enabled for lesson plans)")
+        print(f"📖 Page range support: ✅ Enabled")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
