@@ -13,6 +13,8 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from io import BytesIO
 from docx import Document
+from groq import Groq
+from duckduckgo_search import DDGS
 
 # ================================================================
 # APP CONFIGURATION
@@ -33,52 +35,91 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# DATABASE INITIALIZATION - MUST BE BEFORE MODELS ✅
+# DATABASE INITIALIZATION
 # ================================================================
 db = SQLAlchemy(app)
 
 # ================================================================
-# OPENROUTER CONFIGURATION
+# GROQ API CONFIGURATION
 # ================================================================
 
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+GROQ_MODEL = "llama3-70b-8192"  # ወይም "mixtral-8x7b-32768", "gemma2-9b-it"
 
-# Free models with fallback support
-FREE_MODELS = [
-    "google/gemini-2.0-flash-lite-preview-02-05:free",
-    "google/gemini-2.0-flash-exp:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "microsoft/phi-3-mini-128k-instruct:free",
-]
+# Initialize Groq client
+groq_client = None
+if GROQ_API_KEY:
+    groq_client = Groq(api_key=GROQ_API_KEY)
 
-current_model_index = 0
-model_failures = {}
+# ================================================================
+# WEB SEARCH FUNCTION
+# ================================================================
 
-def get_next_model():
-    global current_model_index
-    available_models = [m for m in FREE_MODELS if m not in model_failures]
-    if not available_models:
-        model_failures.clear()
-        available_models = FREE_MODELS
+def web_search(query, max_results=5):
+    """Search the web using DuckDuckGo"""
+    try:
+        with DDGS() as ddgs:
+            results = []
+            for r in ddgs.text(query, max_results=max_results):
+                results.append({
+                    'title': r.get('title', ''),
+                    'body': r.get('body', ''),
+                    'href': r.get('href', '')
+                })
+            return results
+    except Exception as e:
+        print(f"⚠️ Web search error: {e}")
+        return []
+
+def format_search_results(results):
+    """Format search results for context"""
+    if not results:
+        return "No web search results available."
     
-    model = available_models[current_model_index % len(available_models)]
-    current_model_index += 1
-    return model
+    formatted = []
+    for i, r in enumerate(results, 1):
+        formatted.append(f"[{i}] {r['title']}\n{r['body']}\nSource: {r['href']}\n")
+    return "\n".join(formatted)
 
-def get_ai_response(system_prompt, user_query, context_chunks):
-    if not OPENROUTER_API_KEY:
-        return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
+# ================================================================
+# AI RESPONSE FUNCTION (Groq + Web Search)
+# ================================================================
+
+def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False):
+    """Get AI response using Groq with optional web search"""
     
-    context_text = "\n\n---\n\n".join(context_chunks) if context_chunks else "No context available."
-    prompt_type = detect_prompt_type(user_query)
-    prompt_template = get_prompt_template(prompt_type)
+    if not groq_client:
+        return "⚠️ Groq API key is not set. Please add GROQ_API_KEY to environment variables."
     
+    # Detect language
     if detect_language(user_query) == 'amharic':
         lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
         lang_instruction = "You MUST respond in English."
     
+    # Build context
+    context_text = ""
+    
+    # Add document context if available
+    if context_chunks:
+        context_text += "\n=== DOCUMENT CONTEXT ===\n"
+        context_text += "\n\n---\n\n".join(context_chunks[:5])  # Limit to 5 chunks
+    
+    # Add web search results if requested
+    if use_web_search:
+        search_results = web_search(user_query)
+        if search_results:
+            context_text += "\n=== WEB SEARCH RESULTS ===\n"
+            context_text += format_search_results(search_results)
+    
+    if not context_text.strip():
+        context_text = "No context available. Please provide more information."
+    
+    # Detect prompt type
+    prompt_type = detect_prompt_type(user_query)
+    prompt_template = get_prompt_template(prompt_type)
+    
+    # Build full prompt
     full_prompt = (
         f"{system_prompt}\n\n"
         f"=== LANGUAGE ===\n{lang_instruction}\n\n"
@@ -87,60 +128,25 @@ def get_ai_response(system_prompt, user_query, context_chunks):
         f"=== USER QUESTION ===\n{user_query}"
     )
     
-    estimated_tokens = len(full_prompt) // 4
-    print(f"📊 Estimated tokens: {estimated_tokens}")
-    
-    max_attempts = len(FREE_MODELS) * 2
-    for attempt in range(max_attempts):
-        model = get_next_model()
-        print(f"🤖 Attempt {attempt+1}: Using {model}")
+    try:
+        # Get response from Groq
+        completion = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": full_prompt}
+            ],
+            temperature=0.1,
+            max_tokens=2048,
+            top_p=0.95
+        )
         
-        try:
-            response = requests.post(
-                OPENROUTER_BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://nigat-tutor-ai.onrender.com",
-                    "X-Title": "Nigat Tutor AI"
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": full_prompt}
-                    ],
-                    "temperature": 0.05,
-                    "max_tokens": 1024,
-                },
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if 'choices' in data and data['choices']:
-                    print(f"✅ Response received from {model}")
-                    if model in model_failures:
-                        del model_failures[model]
-                    return data['choices'][0]['message']['content']
-            else:
-                error_msg = response.text[:200] if response.text else "Unknown error"
-                print(f"⚠️ {model} error: {response.status_code} - {error_msg}")
-                model_failures[model] = True
-                if response.status_code == 429:
-                    print(f"⏳ Rate limit on {model}, switching to next model...")
-                    continue
-                    
-        except requests.exceptions.Timeout:
-            print(f"⏰ Timeout on {model}, trying next...")
-            model_failures[model] = True
-            continue
-        except Exception as e:
-            print(f"⚠️ Error with {model}: {e}")
-            model_failures[model] = True
-            continue
-    
-    return "⚠️ All available models failed. Please try again later or check your OpenRouter API key."
+        response = completion.choices[0].message.content
+        return response
+        
+    except Exception as e:
+        print(f"⚠️ Groq API error: {e}")
+        return f"⚠️ Error generating response: {str(e)}"
 
 # ================================================================
 # PROMPT MANAGEMENT
@@ -150,8 +156,14 @@ def detect_prompt_type(query):
     query_lower = query.lower()
     if any(w in query_lower for w in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
         return 'daily_lesson'
-    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly']):
+    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly', 'ዓመታዊ']):
         return 'annual_plan'
+    elif any(w in query_lower for w in ['semester', 'ሴሚስተር', 'sem']):
+        return 'semester_plan'
+    elif any(w in query_lower for w in ['monthly', 'ወርሃዊ', 'month']):
+        return 'monthly_plan'
+    elif any(w in query_lower for w in ['weekly', 'ሳምንታዊ', 'week']):
+        return 'weekly_plan'
     elif any(w in query_lower for w in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
         return 'exam'
     elif any(w in query_lower for w in ['summary', 'summarize', 'ማጠቃለያ']):
@@ -182,13 +194,41 @@ Generate an annual lesson plan with this structure:
 
 Use information from the provided context.
 """,
+        'semester_plan': """
+=== SEMESTER LESSON PLAN ===
+Generate a semester lesson plan with this structure:
+
+1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Semester
+2. TABLE: Week | Topic | Objectives | Activities | Assessment
+
+Use information from the provided context.
+""",
+        'monthly_plan': """
+=== MONTHLY LESSON PLAN ===
+Generate a monthly lesson plan with this structure:
+
+1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Month
+2. TABLE: Week | Topic | Objectives | Activities | Resources
+
+Use information from the provided context.
+""",
+        'weekly_plan': """
+=== WEEKLY LESSON PLAN ===
+Generate a weekly lesson plan with this structure:
+
+1. SCHOOL INFORMATION: School Name, Teacher Name, Subject, Grade, Week
+2. TABLE: Day | Topic | Objectives | Activities | Homework
+
+Use information from the provided context.
+""",
         'exam': """
 === EXAM GENERATOR ===
 Generate exam questions based on the provided content.
 Include:
-- Multiple choice questions (4 options each)
-- True/False questions
-- Short answer questions
+- Multiple choice questions (4 options each) - at least 10
+- True/False questions - at least 5
+- Short answer questions - at least 5
+- Essay questions - at least 2
 
 Use the context to create accurate, relevant questions.
 """,
@@ -199,6 +239,7 @@ Include:
 - Main topics and key points
 - Important concepts
 - Key terms and definitions
+- Study tips
 
 Keep the summary well-structured and easy to read.
 """,
@@ -239,12 +280,26 @@ def remove_duplicate_sentences(text):
             unique.append(s)
     return ' '.join(unique)
 
+def count_pages(text):
+    """Count approximate pages (250 words per page)"""
+    word_count = len(text.split())
+    return max(1, (word_count // 250) + 1)
+
+def chunk_text(text, chunk_size=500, overlap=50):
+    """Chunk text into smaller pieces"""
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = ' '.join(words[i:i + chunk_size])
+        chunks.append(chunk)
+    return chunks
+
 # ================================================================
-# MEMORY OPTIMIZED PDF EXTRACTION
+# MEMORY OPTIMIZED PDF EXTRACTION (50 Pages)
 # ================================================================
 
 def extract_pdf_text_streaming(filepath):
-    """Extract PDF text page by page with memory optimization"""
+    """Extract PDF text page by page with memory optimization (up to 50 pages)"""
     try:
         import pdfplumber
         text_parts = []
@@ -252,21 +307,19 @@ def extract_pdf_text_streaming(filepath):
         
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
-            # Process only first 30 pages to save memory
-            max_pages = min(total_pages, 30)
+            # Process up to 50 pages
+            max_pages = min(total_pages, 50)
             
             for i in range(max_pages):
                 page = pdf.pages[i]
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
-                # Free page memory
                 page = None
                 if (i + 1) % 10 == 0:
                     print(f"📄 Extracted page {i+1}/{max_pages}")
         
         full_text = "\n\n".join(text_parts)
-        # Free text_parts memory
         text_parts = None
         return full_text, max_pages if full_text else "No text found in PDF.", 0
     except Exception as e:
@@ -317,9 +370,9 @@ class EnterpriseRAG:
         self.doc_metadata = {}
         self.chunk_texts = {}
         self.faiss_indexes = {}
-        self.chunk_size = 250      # ቀንሷል
-        self.overlap = 30          # ቀንሷል
-        self.max_chunks = 300      # ከፍተኛ የክፍል ብዛት
+        self.chunk_size = 300
+        self.overlap = 50
+        self.max_chunks = 400
     
     def get_index_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}.faiss")
@@ -368,17 +421,14 @@ class EnterpriseRAG:
             embeddings.append(emb)
             chunk_count += 1
             
-            # Add to FAISS in smaller batches (30 instead of 50)
             if faiss_index is not None and len(embeddings) >= 30:
                 if embeddings:
                     emb_array = np.array(embeddings).astype('float32')
                     faiss_index.add(emb_array)
                     embeddings = []
-                    # Force garbage collection
                     import gc
                     gc.collect()
         
-        # Add remaining embeddings
         if embeddings and faiss_index is not None:
             emb_array = np.array(embeddings).astype('float32')
             faiss_index.add(emb_array)
@@ -458,23 +508,22 @@ class EnterpriseRAG:
                     if total_tokens + estimated <= max_tokens:
                         selected.append(chunk)
                         total_tokens += estimated
-                    if len(selected) >= 4:  # Limit to 4 chunks max
+                    if len(selected) >= 5:
                         break
                 return selected if selected else [chunks[0]]
             except:
                 pass
         
-        # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
-        for i, chunk in enumerate(chunks[:80]):  # Only check first 80 chunks
+        for i, chunk in enumerate(chunks[:100]):
             chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
             overlap = len(query_words & chunk_words)
             if overlap > 0:
                 scored.append((overlap, chunk))
         
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [chunk for _, chunk in scored[:3]]
+        return [chunk for _, chunk in scored[:4]]
     
     def get_document_info(self, session_id):
         if session_id in self.doc_metadata:
@@ -500,7 +549,7 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS - ከDB በኋላ ✅
+# MODELS
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -672,8 +721,48 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES (Memory Optimized)
+# TEXT INPUT ROUTE (Up to 10 pages)
 # ================================================================
+
+@app.route('/upload_text', methods=['POST'])
+def upload_text():
+    """Upload text directly (up to 10 pages)"""
+    data = request.json
+    text = data.get('text', '').strip()
+    
+    if not text:
+        return jsonify({'success': False, 'message': 'No text provided.'}), 400
+    
+    # Check page count (250 words per page)
+    word_count = len(text.split())
+    pages = (word_count // 250) + 1
+    
+    if pages > 10:
+        return jsonify({'success': False, 'message': f'Text exceeds 10 pages ({pages} pages). Please reduce the content.'}), 400
+    
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
+    
+    session_id = session['session_id']
+    filename = f"text_input_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    num_chunks = rag.store_document(session_id, text, filename, pages)
+    
+    session['text_filename'] = filename
+    session['text_pages'] = pages
+    session['text_chunks'] = num_chunks
+    
+    return jsonify({
+        'success': True,
+        'message': f'Text uploaded and indexed! ({pages} pages, {num_chunks} chunks)',
+        'session_id': session_id,
+        'pages': pages,
+        'chunks': num_chunks
+    }), 200
+
+# ================================================================
+# UPLOAD ROUTES (PDF - 50 Pages)
+# ================================================================
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -694,6 +783,9 @@ def upload_file():
             
             if not text or text.startswith("PDF extraction error"):
                 return jsonify({'success': False, 'message': f'Error extracting text: {text}'}), 500
+            
+            if pages > 50:
+                return jsonify({'success': False, 'message': f'PDF has {pages} pages. Maximum is 50 pages.'}), 400
             
             if 'session_id' not in session:
                 session['session_id'] = str(uuid.uuid4())
@@ -744,14 +836,19 @@ def clear_context():
     session.pop('pdf_size', None)
     session.pop('pdf_pages', None)
     session.pop('pdf_chunks', None)
+    session.pop('text_filename', None)
+    session.pop('text_pages', None)
+    session.pop('text_chunks', None)
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE
+# AI CHAT ROUTE (With Web Search)
 # ================================================================
+
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
     user_query = request.json.get('query', '').strip()
+    use_web_search = request.json.get('use_web_search', False)
     
     if not user_query:
         return jsonify({"answer": "Please ask a question."})
@@ -759,22 +856,25 @@ def ask_ai():
     query_lang = detect_language(user_query)
     print(f"🔍 Detected language: {query_lang}")
     print(f"📝 User query: {user_query[:100]}...")
+    print(f"🌐 Web search: {'Enabled' if use_web_search else 'Disabled'}")
     
     session_id = session.get('session_id')
     
-    if not session_id:
-        return jsonify({"answer": "Please upload a document first before asking questions."})
+    # Get relevant chunks from document if available
+    relevant_chunks = []
+    doc_info = None
     
-    relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000)
-    
-    if not relevant_chunks:
-        return jsonify({"answer": "I couldn't find relevant information in the uploaded document. Please try a different question."})
-    
-    doc_info = rag.get_document_info(session_id)
-    if doc_info:
-        print(f"📄 Document: {doc_info.get('filename', 'unknown')} ({doc_info.get('pages', 0)} pages, {doc_info.get('chunk_count', 0)} chunks)")
+    if session_id:
+        relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000)
+        doc_info = rag.get_document_info(session_id)
+        if doc_info:
+            print(f"📄 Document: {doc_info.get('filename', 'unknown')} ({doc_info.get('pages', 0)} pages, {doc_info.get('chunk_count', 0)} chunks)")
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
+    
+    # If web search is enabled or no document context, use web search
+    if use_web_search or not relevant_chunks:
+        use_web_search = True
     
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
@@ -788,21 +888,32 @@ def ask_ai():
         "=== ABOUT THE CREATOR ===\n"
         "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
         "=== ACCURACY RULE ===\n"
-        "Provide ONLY accurate information based on the provided context. If the context doesn't contain the answer, say so clearly.\n\n"
+        "Provide ONLY accurate information based on the provided context. If the context doesn't contain the answer, use web search results. If neither contains the answer, say so clearly.\n\n"
         "=== AMHARIC SPELLING ===\n"
-        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n"
+        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
+        "=== WEB SEARCH ===\n"
+        f"Web search is {'ENABLED' if use_web_search else 'DISABLED'} for this query.\n"
     )
     
-    answer = get_ai_response(system_prompt, user_query, relevant_chunks)
+    answer = get_ai_response(
+        system_prompt, 
+        user_query, 
+        relevant_chunks if relevant_chunks else None,
+        use_web_search=use_web_search
+    )
     
     if answer:
         answer = remove_duplicate_sentences(answer)
     
-    return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
+    return jsonify({
+        "answer": answer or "⚠️ No AI response available. Please try again later.",
+        "used_web_search": use_web_search
+    })
 
 # ================================================================
 # DOWNLOAD WORD
 # ================================================================
+
 @app.route('/download_word', methods=['POST'])
 def download_word():
     data = request.json
@@ -903,6 +1014,7 @@ def download_word():
 # ================================================================
 # LESSON PLAN ROUTES
 # ================================================================
+
 @app.route('/lesson')
 def lesson_home():
     annual_plans = AnnualPlan.query.all()
@@ -1052,6 +1164,7 @@ def daily_plan():
 # ================================================================
 # PEACE CLUB ROUTES
 # ================================================================
+
 @app.route('/peaceclub')
 def peaceclub_home():
     club_plans = PeaceClubPlan.query.all()
@@ -1270,6 +1383,10 @@ with app.app_context():
         db.create_all()
         print("✅ Database tables created/verified successfully.")
         print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
+        print(f"🤖 Groq API: {'✅ Configured' if GROQ_API_KEY else '❌ Not configured'}")
+        print(f"📄 Max PDF pages: 50")
+        print(f"📝 Max text pages: 10")
+        print(f"🌐 Web search: ✅ Enabled")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
