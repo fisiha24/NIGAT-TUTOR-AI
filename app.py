@@ -4,6 +4,7 @@ import re
 import uuid
 import pickle
 import numpy as np
+import requests
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -32,311 +33,114 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # ================================================================
-# DATABASE INITIALIZATION
+# DATABASE INITIALIZATION - MUST BE BEFORE MODELS ✅
 # ================================================================
 db = SQLAlchemy(app)
 
 # ================================================================
-# GROQ API - MULTIPLE KEYS
-# ================================================================
-GROQ_API_KEYS = []
-for i in range(1, 6):
-    key = os.environ.get(f'GROQ_API_KEY_{i}', '')
-    if key:
-        GROQ_API_KEYS.append(key)
-
-main_groq_key = os.environ.get('GROQ_API_KEY', '')
-if main_groq_key and main_groq_key not in GROQ_API_KEYS:
-    GROQ_API_KEYS.append(main_groq_key)
-
-current_key_index = 0
-
-def get_next_groq_key():
-    global current_key_index
-    if not GROQ_API_KEYS:
-        return None
-    key = GROQ_API_KEYS[current_key_index % len(GROQ_API_KEYS)]
-    current_key_index += 1
-    return key
-
-print(f"✅ Loaded {len(GROQ_API_KEYS)} Groq API keys")
-
-# ================================================================
-# HELPER FUNCTIONS
+# OPENROUTER CONFIGURATION
 # ================================================================
 
-def detect_language(text):
-    if not text:
-        return 'english'
-    amharic_pattern = re.compile(r'[\u1200-\u137F]')
-    if amharic_pattern.search(text):
-        return 'amharic'
-    return 'english'
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-def remove_duplicate_sentences(text):
-    if not text:
-        return text
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    seen = set()
-    unique = []
-    for sentence in sentences:
-        s = sentence.strip()
-        if not s or len(s) < 5:
+# Free models with fallback support
+FREE_MODELS = [
+    "google/gemini-2.0-flash-lite-preview-02-05:free",
+    "google/gemini-2.0-flash-exp:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "microsoft/phi-3-mini-128k-instruct:free",
+]
+
+current_model_index = 0
+model_failures = {}
+
+def get_next_model():
+    global current_model_index
+    available_models = [m for m in FREE_MODELS if m not in model_failures]
+    if not available_models:
+        model_failures.clear()
+        available_models = FREE_MODELS
+    
+    model = available_models[current_model_index % len(available_models)]
+    current_model_index += 1
+    return model
+
+def get_ai_response(system_prompt, user_query, context_chunks):
+    if not OPENROUTER_API_KEY:
+        return "⚠️ OpenRouter API key is not set. Please add OPENROUTER_API_KEY to environment variables."
+    
+    context_text = "\n\n---\n\n".join(context_chunks) if context_chunks else "No context available."
+    prompt_type = detect_prompt_type(user_query)
+    prompt_template = get_prompt_template(prompt_type)
+    
+    if detect_language(user_query) == 'amharic':
+        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
+    else:
+        lang_instruction = "You MUST respond in English."
+    
+    full_prompt = (
+        f"{system_prompt}\n\n"
+        f"=== LANGUAGE ===\n{lang_instruction}\n\n"
+        f"=== TASK ===\n{prompt_template}\n\n"
+        f"=== CONTEXT ===\n{context_text}\n\n"
+        f"=== USER QUESTION ===\n{user_query}"
+    )
+    
+    estimated_tokens = len(full_prompt) // 4
+    print(f"📊 Estimated tokens: {estimated_tokens}")
+    
+    max_attempts = len(FREE_MODELS) * 2
+    for attempt in range(max_attempts):
+        model = get_next_model()
+        print(f"🤖 Attempt {attempt+1}: Using {model}")
+        
+        try:
+            response = requests.post(
+                OPENROUTER_BASE_URL,
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://nigat-tutor-ai.onrender.com",
+                    "X-Title": "Nigat Tutor AI"
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": full_prompt}
+                    ],
+                    "temperature": 0.05,
+                    "max_tokens": 1024,
+                },
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'choices' in data and data['choices']:
+                    print(f"✅ Response received from {model}")
+                    if model in model_failures:
+                        del model_failures[model]
+                    return data['choices'][0]['message']['content']
+            else:
+                error_msg = response.text[:200] if response.text else "Unknown error"
+                print(f"⚠️ {model} error: {response.status_code} - {error_msg}")
+                model_failures[model] = True
+                if response.status_code == 429:
+                    print(f"⏳ Rate limit on {model}, switching to next model...")
+                    continue
+                    
+        except requests.exceptions.Timeout:
+            print(f"⏰ Timeout on {model}, trying next...")
+            model_failures[model] = True
             continue
-        norm = s.lower()
-        if norm not in seen:
-            seen.add(norm)
-            unique.append(s)
-    return ' '.join(unique)
-
-def extract_pdf_text_streaming(filepath):
-    try:
-        import pdfplumber
-        text_parts = []
-        total_pages = 0
-        
-        with pdfplumber.open(filepath) as pdf:
-            total_pages = len(pdf.pages)
-            max_pages = min(total_pages, 50)
-            
-            for i in range(max_pages):
-                page = pdf.pages[i]
-                page_text = page.extract_text()
-                if page_text:
-                    text_parts.append(page_text)
-                page = None
-                if (i + 1) % 10 == 0:
-                    print(f"📄 Extracted page {i+1}/{max_pages}")
-        
-        full_text = "\n\n".join(text_parts)
-        text_parts = None
-        return full_text, max_pages if full_text else "No text found in PDF.", 0
-    except Exception as e:
-        return f"PDF extraction error: {str(e)}", 0
-
-# ================================================================
-# EMBEDDING MODEL (Singleton)
-# ================================================================
-
-_embedding_model = None
-
-def get_embedding_model():
-    global _embedding_model
-    if _embedding_model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            print("🔄 Loading embedding model...")
-            _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-            print("✅ Embedding model loaded")
-        except ImportError:
-            print("⚠️ sentence-transformers not installed!")
-            _embedding_model = None
-    return _embedding_model
-
-def get_embedding(text):
-    model = get_embedding_model()
-    if model is None:
-        import hashlib
-        words = text.lower().split()
-        vector = np.zeros(384)
-        for word in words[:100]:
-            h = hashlib.md5(word.encode()).hexdigest()
-            for i in range(min(8, len(h))):
-                vector[i % 384] += (int(h[i], 16) - 8) / 16
-        norm = np.linalg.norm(vector)
-        return vector / (norm + 1e-8)
-    try:
-        return model.encode(text, normalize_embeddings=True)
-    except:
-        return np.zeros(384)
-
-# ================================================================
-# RAG SYSTEM
-# ================================================================
-
-class EnterpriseRAG:
-    def __init__(self):
-        self.doc_metadata = {}
-        self.chunk_texts = {}
-        self.faiss_indexes = {}
-        self.chunk_size = 300
-        self.overlap = 50
-        self.max_chunks = 500
+        except Exception as e:
+            print(f"⚠️ Error with {model}: {e}")
+            model_failures[model] = True
+            continue
     
-    def get_index_path(self, session_id):
-        return os.path.join(FAISS_DIR, f"{session_id}.faiss")
-    
-    def get_metadata_path(self, session_id):
-        return os.path.join(FAISS_DIR, f"{session_id}_meta.pkl")
-    
-    def _chunk_text_streaming(self, text):
-        words = text.split()
-        total_words = len(words)
-        chunk_count = 0
-        for start in range(0, total_words, self.chunk_size - self.overlap):
-            if chunk_count >= self.max_chunks:
-                break
-            end = min(start + self.chunk_size, total_words)
-            chunk_words = words[start:end]
-            if len(chunk_words) < 15:
-                continue
-            chunk_count += 1
-            yield ' '.join(chunk_words)
-            if end >= total_words:
-                break
-    
-    def store_document(self, session_id, text, filename, pages=0):
-        self.doc_metadata[session_id] = {
-            'filename': filename,
-            'pages': pages,
-            'word_count': len(text.split()),
-            'chunk_count': 0
-        }
-        
-        try:
-            import faiss
-            embedding_dim = 384
-            faiss_index = faiss.IndexFlatIP(embedding_dim)
-        except ImportError:
-            faiss_index = None
-        
-        chunks = []
-        embeddings = []
-        chunk_count = 0
-        
-        for chunk_text in self._chunk_text_streaming(text):
-            chunks.append(chunk_text)
-            emb = get_embedding(chunk_text)
-            embeddings.append(emb)
-            chunk_count += 1
-            
-            if faiss_index is not None and len(embeddings) >= 50:
-                if embeddings:
-                    emb_array = np.array(embeddings).astype('float32')
-                    faiss_index.add(emb_array)
-                    embeddings = []
-                    import gc
-                    gc.collect()
-        
-        if embeddings and faiss_index is not None:
-            emb_array = np.array(embeddings).astype('float32')
-            faiss_index.add(emb_array)
-            embeddings = None
-        
-        self.chunk_texts[session_id] = chunks
-        self.doc_metadata[session_id]['chunk_count'] = len(chunks)
-        
-        if faiss_index is not None:
-            faiss_path = self.get_index_path(session_id)
-            faiss.write_index(faiss_index, faiss_path)
-            self.faiss_indexes[session_id] = faiss_index
-        
-        meta_path = self.get_metadata_path(session_id)
-        with open(meta_path, 'wb') as f:
-            pickle.dump({
-                'chunks': chunks,
-                'metadata': self.doc_metadata[session_id]
-            }, f)
-        
-        print(f"📚 Stored {len(chunks)} chunks")
-        return len(chunks)
-    
-    def _load_faiss_index(self, session_id):
-        if session_id in self.faiss_indexes:
-            return self.faiss_indexes[session_id]
-        try:
-            import faiss
-            faiss_path = self.get_index_path(session_id)
-            if os.path.exists(faiss_path):
-                index = faiss.read_index(faiss_path)
-                self.faiss_indexes[session_id] = index
-                return index
-        except:
-            pass
-        return None
-    
-    def _load_metadata(self, session_id):
-        meta_path = self.get_metadata_path(session_id)
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, 'rb') as f:
-                    data = pickle.load(f)
-                    self.chunk_texts[session_id] = data.get('chunks', [])
-                    self.doc_metadata[session_id] = data.get('metadata', {})
-                    return data
-            except:
-                pass
-        return None
-    
-    def get_relevant_chunks(self, session_id, query, max_tokens=4000):
-        if session_id not in self.chunk_texts:
-            self._load_metadata(session_id)
-        
-        if session_id not in self.chunk_texts or not self.chunk_texts[session_id]:
-            return []
-        
-        faiss_index = self._load_faiss_index(session_id)
-        chunks = self.chunk_texts[session_id]
-        
-        if faiss_index is not None:
-            try:
-                import faiss
-                query_emb = get_embedding(query)
-                query_emb = np.array([query_emb]).astype('float32')
-                
-                k = min(20, len(chunks))
-                scores, indices = faiss_index.search(query_emb, k)
-                
-                selected = []
-                total_tokens = 0
-                for idx in indices[0]:
-                    if idx < 0 or idx >= len(chunks):
-                        continue
-                    chunk = chunks[idx]
-                    estimated = len(chunk) // 4
-                    if total_tokens + estimated <= max_tokens:
-                        selected.append(chunk)
-                        total_tokens += estimated
-                    if len(selected) >= 5:
-                        break
-                return selected if selected else [chunks[0]]
-            except:
-                pass
-        
-        # Keyword fallback
-        query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
-        scored = []
-        for i, chunk in enumerate(chunks[:100]):
-            chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
-            overlap = len(query_words & chunk_words)
-            if overlap > 0:
-                scored.append((overlap, chunk))
-        
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [chunk for _, chunk in scored[:3]]
-    
-    def get_document_info(self, session_id):
-        if session_id in self.doc_metadata:
-            return self.doc_metadata[session_id]
-        self._load_metadata(session_id)
-        return self.doc_metadata.get(session_id)
-    
-    def clear(self, session_id):
-        if session_id in self.doc_metadata:
-            del self.doc_metadata[session_id]
-        if session_id in self.chunk_texts:
-            del self.chunk_texts[session_id]
-        if session_id in self.faiss_indexes:
-            del self.faiss_indexes[session_id]
-        
-        faiss_path = self.get_index_path(session_id)
-        if os.path.exists(faiss_path):
-            os.remove(faiss_path)
-        meta_path = self.get_metadata_path(session_id)
-        if os.path.exists(meta_path):
-            os.remove(meta_path)
-
-rag = EnterpriseRAG()
+    return "⚠️ All available models failed. Please try again later or check your OpenRouter API key."
 
 # ================================================================
 # PROMPT MANAGEMENT
@@ -408,120 +212,298 @@ If the context doesn't contain the answer, say so clearly.
     return templates.get(prompt_type, templates['general'])
 
 # ================================================================
-# AI RESPONSE FUNCTION (GROQ ONLY)
+# HELPER FUNCTIONS
 # ================================================================
 
-def get_ai_response(system_prompt, user_query, context_chunks):
-    """Get response from Groq API using multiple keys (round-robin)"""
-    
+def detect_language(text):
+    if not text:
+        return 'english'
+    amharic_pattern = re.compile(r'[\u1200-\u137F]')
+    if amharic_pattern.search(text):
+        return 'amharic'
+    return 'english'
+
+def remove_duplicate_sentences(text):
+    if not text:
+        return text
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    seen = set()
+    unique = []
+    for sentence in sentences:
+        s = sentence.strip()
+        if not s or len(s) < 5:
+            continue
+        norm = s.lower()
+        if norm not in seen:
+            seen.add(norm)
+            unique.append(s)
+    return ' '.join(unique)
+
+# ================================================================
+# MEMORY OPTIMIZED PDF EXTRACTION
+# ================================================================
+
+def extract_pdf_text_streaming(filepath):
+    """Extract PDF text page by page with memory optimization"""
     try:
-        from groq import Groq
-        key = get_next_groq_key()
-        if key is None:
-            return "⚠️ No Groq API keys available. Please add at least one API key."
+        import pdfplumber
+        text_parts = []
+        total_pages = 0
         
-        # Build context
-        context_text = "\n\n---\n\n".join(context_chunks) if context_chunks else "No context available."
-        prompt_type = detect_prompt_type(user_query)
-        prompt_template = get_prompt_template(prompt_type)
-        
-        if detect_language(user_query) == 'amharic':
-            lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
-        else:
-            lang_instruction = "You MUST respond in English."
-        
-        full_prompt = (
-            f"{system_prompt}\n\n"
-            f"=== LANGUAGE ===\n{lang_instruction}\n\n"
-            f"=== TASK ===\n{prompt_template}\n\n"
-            f"=== CONTEXT ===\n{context_text}\n\n"
-            f"=== USER QUESTION ===\n{user_query}"
-        )
-        
-        client = Groq(api_key=key)
-        print("🤖 Using Groq API (llama-3.3-70b-versatile)...")
-        
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_prompt}
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.05,
-            max_tokens=1024,
-            top_p=0.85,
-        )
-        
-        if chat_completion and chat_completion.choices:
-            print("✅ Groq response received")
-            return chat_completion.choices[0].message.content
+        with pdfplumber.open(filepath) as pdf:
+            total_pages = len(pdf.pages)
+            # Process only first 30 pages to save memory
+            max_pages = min(total_pages, 30)
             
+            for i in range(max_pages):
+                page = pdf.pages[i]
+                page_text = page.extract_text()
+                if page_text:
+                    text_parts.append(page_text)
+                # Free page memory
+                page = None
+                if (i + 1) % 10 == 0:
+                    print(f"📄 Extracted page {i+1}/{max_pages}")
+        
+        full_text = "\n\n".join(text_parts)
+        # Free text_parts memory
+        text_parts = None
+        return full_text, max_pages if full_text else "No text found in PDF.", 0
     except Exception as e:
-        print(f"⚠️ Groq error: {e}")
-        return f"AI Error: {str(e)}"
-    
-    return "⚠️ No response from AI service."
+        return f"PDF extraction error: {str(e)}", 0
 
 # ================================================================
-# GENERAL KNOWLEDGE RESPONSE (ከሰነድ ውጭ)
+# EMBEDDING MODEL (Singleton)
 # ================================================================
 
-def get_general_response(user_query, query_lang):
-    """አጠቃላይ ጥያቄዎችን ለመመለስ"""
-    
+_embedding_model = None
+
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            print("🔄 Loading embedding model...")
+            _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            print("✅ Embedding model loaded")
+        except ImportError:
+            print("⚠️ sentence-transformers not installed!")
+            _embedding_model = None
+    return _embedding_model
+
+def get_embedding(text):
+    model = get_embedding_model()
+    if model is None:
+        import hashlib
+        words = text.lower().split()
+        vector = np.zeros(384)
+        for word in words[:100]:
+            h = hashlib.md5(word.encode()).hexdigest()
+            for i in range(min(8, len(h))):
+                vector[i % 384] += (int(h[i], 16) - 8) / 16
+        norm = np.linalg.norm(vector)
+        return vector / (norm + 1e-8)
     try:
-        from groq import Groq
-        key = get_next_groq_key()
-        if key is None:
-            return "⚠️ No Groq API keys available."
-        
-        if query_lang == 'amharic':
-            lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
-        else:
-            lang_instruction = "You MUST respond in English."
-        
-        system_prompt = (
-            "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke.\n\n"
-            f"=== LANGUAGE RULE ===\n{lang_instruction}\n"
-            "Do NOT switch languages.\n\n"
-            "=== ABOUT THE CREATOR ===\n"
-            "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
-            "=== ACCURACY RULE ===\n"
-            "Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.'\n\n"
-            "=== AMHARIC SPELLING ===\n"
-            "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
-            "=== INSTRUCTION ===\n"
-            "Answer the user's question as a helpful AI tutor. Provide clear, accurate, and educational responses."
-        )
-        
-        client = Groq(api_key=key)
-        print("🤖 Using Groq API (llama-3.3-70b-versatile) for general knowledge...")
-        
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.05,
-            max_tokens=1024,
-            top_p=0.85,
-        )
-        
-        if chat_completion and chat_completion.choices:
-            print("✅ Groq response received")
-            return chat_completion.choices[0].message.content
-            
-    except Exception as e:
-        print(f"⚠️ Groq error: {e}")
-        return f"AI Error: {str(e)}"
-    
-    return "⚠️ No response from AI service."
+        return model.encode(text, normalize_embeddings=True)
+    except:
+        return np.zeros(384)
 
 # ================================================================
-# MODELS
+# MEMORY OPTIMIZED RAG SYSTEM
+# ================================================================
+
+class EnterpriseRAG:
+    def __init__(self):
+        self.doc_metadata = {}
+        self.chunk_texts = {}
+        self.faiss_indexes = {}
+        self.chunk_size = 250      # ቀንሷል
+        self.overlap = 30          # ቀንሷል
+        self.max_chunks = 300      # ከፍተኛ የክፍል ብዛት
+    
+    def get_index_path(self, session_id):
+        return os.path.join(FAISS_DIR, f"{session_id}.faiss")
+    
+    def get_metadata_path(self, session_id):
+        return os.path.join(FAISS_DIR, f"{session_id}_meta.pkl")
+    
+    def _chunk_text_streaming(self, text):
+        words = text.split()
+        total_words = len(words)
+        chunk_count = 0
+        for start in range(0, total_words, self.chunk_size - self.overlap):
+            if chunk_count >= self.max_chunks:
+                break
+            end = min(start + self.chunk_size, total_words)
+            chunk_words = words[start:end]
+            if len(chunk_words) < 10:
+                continue
+            chunk_count += 1
+            yield ' '.join(chunk_words)
+            if end >= total_words:
+                break
+    
+    def store_document(self, session_id, text, filename, pages=0):
+        self.doc_metadata[session_id] = {
+            'filename': filename,
+            'pages': pages,
+            'word_count': len(text.split()),
+            'chunk_count': 0
+        }
+        
+        try:
+            import faiss
+            embedding_dim = 384
+            faiss_index = faiss.IndexFlatIP(embedding_dim)
+        except ImportError:
+            faiss_index = None
+        
+        chunks = []
+        embeddings = []
+        chunk_count = 0
+        
+        for chunk_text in self._chunk_text_streaming(text):
+            chunks.append(chunk_text)
+            emb = get_embedding(chunk_text)
+            embeddings.append(emb)
+            chunk_count += 1
+            
+            # Add to FAISS in smaller batches (30 instead of 50)
+            if faiss_index is not None and len(embeddings) >= 30:
+                if embeddings:
+                    emb_array = np.array(embeddings).astype('float32')
+                    faiss_index.add(emb_array)
+                    embeddings = []
+                    # Force garbage collection
+                    import gc
+                    gc.collect()
+        
+        # Add remaining embeddings
+        if embeddings and faiss_index is not None:
+            emb_array = np.array(embeddings).astype('float32')
+            faiss_index.add(emb_array)
+            embeddings = None
+        
+        self.chunk_texts[session_id] = chunks
+        self.doc_metadata[session_id]['chunk_count'] = len(chunks)
+        
+        if faiss_index is not None:
+            faiss_path = self.get_index_path(session_id)
+            faiss.write_index(faiss_index, faiss_path)
+            self.faiss_indexes[session_id] = faiss_index
+        
+        meta_path = self.get_metadata_path(session_id)
+        with open(meta_path, 'wb') as f:
+            pickle.dump({
+                'chunks': chunks,
+                'metadata': self.doc_metadata[session_id]
+            }, f)
+        
+        print(f"📚 Stored {len(chunks)} chunks")
+        return len(chunks)
+    
+    def _load_faiss_index(self, session_id):
+        if session_id in self.faiss_indexes:
+            return self.faiss_indexes[session_id]
+        try:
+            import faiss
+            faiss_path = self.get_index_path(session_id)
+            if os.path.exists(faiss_path):
+                index = faiss.read_index(faiss_path)
+                self.faiss_indexes[session_id] = index
+                return index
+        except:
+            pass
+        return None
+    
+    def _load_metadata(self, session_id):
+        meta_path = self.get_metadata_path(session_id)
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'rb') as f:
+                    data = pickle.load(f)
+                    self.chunk_texts[session_id] = data.get('chunks', [])
+                    self.doc_metadata[session_id] = data.get('metadata', {})
+                    return data
+            except:
+                pass
+        return None
+    
+    def get_relevant_chunks(self, session_id, query, max_tokens=4000):
+        if session_id not in self.chunk_texts:
+            self._load_metadata(session_id)
+        
+        if session_id not in self.chunk_texts or not self.chunk_texts[session_id]:
+            return []
+        
+        faiss_index = self._load_faiss_index(session_id)
+        chunks = self.chunk_texts[session_id]
+        
+        if faiss_index is not None:
+            try:
+                import faiss
+                query_emb = get_embedding(query)
+                query_emb = np.array([query_emb]).astype('float32')
+                
+                k = min(15, len(chunks))
+                scores, indices = faiss_index.search(query_emb, k)
+                
+                selected = []
+                total_tokens = 0
+                for idx in indices[0]:
+                    if idx < 0 or idx >= len(chunks):
+                        continue
+                    chunk = chunks[idx]
+                    estimated = len(chunk) // 4
+                    if total_tokens + estimated <= max_tokens:
+                        selected.append(chunk)
+                        total_tokens += estimated
+                    if len(selected) >= 4:  # Limit to 4 chunks max
+                        break
+                return selected if selected else [chunks[0]]
+            except:
+                pass
+        
+        # Keyword fallback
+        query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
+        scored = []
+        for i, chunk in enumerate(chunks[:80]):  # Only check first 80 chunks
+            chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
+            overlap = len(query_words & chunk_words)
+            if overlap > 0:
+                scored.append((overlap, chunk))
+        
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [chunk for _, chunk in scored[:3]]
+    
+    def get_document_info(self, session_id):
+        if session_id in self.doc_metadata:
+            return self.doc_metadata[session_id]
+        self._load_metadata(session_id)
+        return self.doc_metadata.get(session_id)
+    
+    def clear(self, session_id):
+        if session_id in self.doc_metadata:
+            del self.doc_metadata[session_id]
+        if session_id in self.chunk_texts:
+            del self.chunk_texts[session_id]
+        if session_id in self.faiss_indexes:
+            del self.faiss_indexes[session_id]
+        
+        faiss_path = self.get_index_path(session_id)
+        if os.path.exists(faiss_path):
+            os.remove(faiss_path)
+        meta_path = self.get_metadata_path(session_id)
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+
+rag = EnterpriseRAG()
+
+# ================================================================
+# MODELS - ከDB በኋላ ✅
 # ================================================================
 class Course(db.Model):
+    __tablename__ = 'course'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=False)
@@ -529,6 +511,7 @@ class Course(db.Model):
     quiz_link = db.Column(db.String(500))
 
 class AnnualPlan(db.Model):
+    __tablename__ = 'annual_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -544,6 +527,7 @@ class AnnualPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class LaboratoryPlan(db.Model):
+    __tablename__ = 'laboratory_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     teacher_name = db.Column(db.String(100))
@@ -554,6 +538,7 @@ class LaboratoryPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class DailyPlan(db.Model):
+    __tablename__ = 'daily_plan'
     id = db.Column(db.Integer, primary_key=True)
     teacher_name = db.Column(db.String(100))
     school_name = db.Column(db.String(200))
@@ -592,6 +577,7 @@ class DailyPlan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class PeaceClubPlan(db.Model):
+    __tablename__ = 'peace_club_plan'
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200))
     district = db.Column(db.String(200))
@@ -624,6 +610,7 @@ class PeaceClubPlan(db.Model):
         return json.loads(self.teacher_members) if self.teacher_members else []
 
 class PeaceClubActivity(db.Model):
+    __tablename__ = 'peace_club_activity'
     id = db.Column(db.Integer, primary_key=True)
     club_plan_id = db.Column(db.Integer, db.ForeignKey('peace_club_plan.id'))
     activity_number = db.Column(db.Integer)
@@ -642,7 +629,6 @@ class PeaceClubActivity(db.Model):
     sene = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# --- Admin Views ---
 admin = Admin(app, name='Nigat Admin')
 admin.add_view(ModelView(Course, db))
 admin.add_view(ModelView(AnnualPlan, db))
@@ -654,7 +640,6 @@ admin.add_view(ModelView(PeaceClubActivity, db))
 # ================================================================
 # ROUTES
 # ================================================================
-
 @app.route('/')
 def home():
     try:
@@ -687,9 +672,8 @@ def course_detail(course_id):
     return render_template('course_detail.html', course=Course.query.get_or_404(course_id))
 
 # ================================================================
-# UPLOAD ROUTES
+# UPLOAD ROUTES (Memory Optimized)
 # ================================================================
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -765,7 +749,6 @@ def clear_context():
 # ================================================================
 # AI CHAT ROUTE
 # ================================================================
-
 @app.route('/ask_ai', methods=['POST'])
 def ask_ai():
     user_query = request.json.get('query', '').strip()
@@ -779,23 +762,13 @@ def ask_ai():
     
     session_id = session.get('session_id')
     
-    # ===== IF NO DOCUMENT UPLOADED - GENERAL KNOWLEDGE =====
     if not session_id:
-        print("📚 No document found, using general knowledge mode")
-        answer = get_general_response(user_query, query_lang)
-        if answer:
-            answer = remove_duplicate_sentences(answer)
-        return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
+        return jsonify({"answer": "Please upload a document first before asking questions."})
     
-    # ===== DOCUMENT-BASED RESPONSE =====
     relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000)
     
     if not relevant_chunks:
-        print("📚 No relevant chunks found, using general knowledge mode")
-        answer = get_general_response(user_query, query_lang)
-        if answer:
-            answer = remove_duplicate_sentences(answer)
-        return jsonify({"answer": answer or "⚠️ No AI response available. Please try again later."})
+        return jsonify({"answer": "I couldn't find relevant information in the uploaded document. Please try a different question."})
     
     doc_info = rag.get_document_info(session_id)
     if doc_info:
@@ -830,7 +803,6 @@ def ask_ai():
 # ================================================================
 # DOWNLOAD WORD
 # ================================================================
-
 @app.route('/download_word', methods=['POST'])
 def download_word():
     data = request.json
@@ -931,7 +903,6 @@ def download_word():
 # ================================================================
 # LESSON PLAN ROUTES
 # ================================================================
-
 @app.route('/lesson')
 def lesson_home():
     annual_plans = AnnualPlan.query.all()
@@ -1081,7 +1052,6 @@ def daily_plan():
 # ================================================================
 # PEACE CLUB ROUTES
 # ================================================================
-
 @app.route('/peaceclub')
 def peaceclub_home():
     club_plans = PeaceClubPlan.query.all()
@@ -1295,7 +1265,6 @@ def peaceclub_delete(plan_id):
 # ================================================================
 # CREATE TABLES ON APPLICATION STARTUP
 # ================================================================
-
 with app.app_context():
     try:
         db.create_all()
@@ -1307,7 +1276,6 @@ with app.app_context():
 # ================================================================
 # MAIN
 # ================================================================
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
