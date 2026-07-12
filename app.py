@@ -41,22 +41,71 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 db = SQLAlchemy(app)
 
 # ================================================================
-# GROQ API CONFIGURATION
+# GROQ API MULTI-KEY CONFIGURATION
 # ================================================================
 
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+# Get multiple API keys from environment variable (comma separated)
+# Example: GROQ_API_KEYS="key1,key2,key3"
+GROQ_API_KEYS = os.environ.get('GROQ_API_KEYS', os.environ.get('GROQ_API_KEY', '')).split(',')
+GROQ_API_KEYS = [k.strip() for k in GROQ_API_KEYS if k.strip()]
+
+# Fallback to single key if no multiple keys
+if not GROQ_API_KEYS:
+    GROQ_API_KEYS = [os.environ.get('GROQ_API_KEY', '')]
+
 GROQ_MODEL = "llama-3.3-70b-versatile"
 FALLBACK_MODELS = ["mixtral-8x7b-32768", "gemma2-9b-it", "llama-3.1-8b-instant"]
 
-groq_client = None
-if GROQ_API_KEY:
-    try:
-        groq_client = Groq(api_key=GROQ_API_KEY)
-        print("✅ Groq client initialized successfully")
-    except Exception as e:
-        print(f"⚠️ Failed to initialize Groq client: {e}")
-else:
-    print("⚠️ GROQ_API_KEY not set. Please set it in environment variables.")
+# Initialize Groq clients for each API key
+groq_clients = []
+for key in GROQ_API_KEYS:
+    if key:
+        try:
+            client = Groq(api_key=key)
+            groq_clients.append(client)
+            print(f"✅ Groq client initialized with key: {key[:8]}...")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize client with key {key[:8]}...: {e}")
+
+if not groq_clients:
+    print("⚠️ No Groq API keys configured!")
+
+# Round-robin counter for distributing requests
+current_client_index = 0
+failed_clients = set()  # Track failed clients
+
+def get_next_groq_client():
+    """Get the next available Groq client using round-robin"""
+    global current_client_index, failed_clients
+    
+    available_clients = []
+    for i, client in enumerate(groq_clients):
+        if i not in failed_clients:
+            available_clients.append((i, client))
+    
+    if not available_clients:
+        # If all clients failed, reset and try again
+        failed_clients.clear()
+        available_clients = [(i, client) for i, client in enumerate(groq_clients)]
+    
+    if not available_clients:
+        return None, None
+    
+    # Round-robin selection
+    idx, client = available_clients[current_client_index % len(available_clients)]
+    current_client_index += 1
+    return idx, client
+
+def mark_client_failed(index):
+    """Mark a client as failed"""
+    failed_clients.add(index)
+    print(f"⚠️ Marked client {index} as failed")
+
+def reset_failed_clients():
+    """Reset failed clients (call when all fail)"""
+    global failed_clients
+    failed_clients.clear()
+    print("🔄 Reset all failed clients")
 
 # ================================================================
 # WEB SEARCH FUNCTIONS (DuckDuckGo + Google fallback)
@@ -106,7 +155,6 @@ def google_search(query, max_results=5):
         href = link_elem.get('href')
         if not href:
             continue
-        # Extract snippet
         snippet_elem = g.find('div', class_='VwiC3b')
         snippet = snippet_elem.get_text() if snippet_elem else ''
         results.append({
@@ -140,7 +188,6 @@ def extract_page_range(query):
         end = int(match.group(2))
         if start <= end:
             return start, end
-    # Also try single page
     single_pattern = r'page\s*([0-9]+)'
     match = re.search(single_pattern, query, re.IGNORECASE)
     if match:
@@ -149,14 +196,14 @@ def extract_page_range(query):
     return None, None
 
 # ================================================================
-# AI RESPONSE FUNCTION (Groq + Web Search + Fallback)
+# AI RESPONSE FUNCTION (Multi-Key Groq + Web Search + Fallback)
 # ================================================================
 
 def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False, page_range=None):
-    """Get AI response using Groq with optional web search and fallback models"""
+    """Get AI response using multiple Groq API keys with round-robin"""
     
-    if not groq_client:
-        return "⚠️ Groq API key is not set. Please add GROQ_API_KEY to environment variables."
+    if not groq_clients:
+        return "⚠️ No Groq API keys are configured. Please add GROQ_API_KEYS to environment variables."
     
     # Detect language
     if detect_language(user_query) == 'amharic':
@@ -167,16 +214,13 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     # Build context
     context_text = ""
     
-    # Add document context if available (filter by page range if specified)
+    # Add document context if available
     if context_chunks:
         context_text += "\n=== DOCUMENT CONTEXT ===\n"
-        # If page range is specified, we try to include only those chunks (if we have page numbers)
-        # For simplicity, we just include all chunks and let the model focus on the range if mentioned
         context_text += "\n\n---\n\n".join(context_chunks[:5])
     
     # Add web search results if requested
     if use_web_search:
-        # If page range is specified, we can refine the search query
         search_query = user_query
         if page_range:
             start, end = page_range
@@ -202,13 +246,23 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
         f"=== USER QUESTION ===\n{user_query}"
     )
     
-    # Try primary model first
-    models_to_try = [GROQ_MODEL] + FALLBACK_MODELS
-    
-    for model in models_to_try:
+    # Try with multiple API keys and models
+    max_attempts = len(groq_clients) * len(FALLBACK_MODELS) * 2
+    for attempt in range(max_attempts):
+        client_index, client = get_next_groq_client()
+        if client is None:
+            break
+        
+        # Select model (try primary first, then fallbacks)
+        model_index = attempt % (len(FALLBACK_MODELS) + 1)
+        if model_index == 0:
+            model = GROQ_MODEL
+        else:
+            model = FALLBACK_MODELS[model_index - 1]
+        
         try:
-            print(f"🤖 Trying model: {model}")
-            completion = groq_client.chat.completions.create(
+            print(f"🤖 Attempt {attempt+1}: Using client {client_index}, model {model}")
+            completion = client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -219,17 +273,31 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                 top_p=0.95
             )
             response = completion.choices[0].message.content
-            print(f"✅ Success with model: {model}")
+            print(f"✅ Success with client {client_index}, model {model}")
+            # Client succeeded, remove from failed if it was there
+            if client_index in failed_clients:
+                failed_clients.remove(client_index)
             return response
         except Exception as e:
             error_msg = str(e)
-            print(f"⚠️ Model {model} failed: {error_msg[:100]}")
-            if "decommissioned" in error_msg:
-                print(f"⏭️ Model {model} is decommissioned, trying next...")
+            print(f"⚠️ Client {client_index}, model {model} failed: {error_msg[:100]}")
+            
+            # Check if this is an API key error (rate limit, invalid key, etc.)
+            if any(x in error_msg.lower() for x in ['rate limit', '429', 'quota', 'invalid', 'decommissioned']):
+                mark_client_failed(client_index)
+                print(f"⏭️ Marked client {client_index} as failed due to: {error_msg[:50]}")
+                # If all clients failed, reset and continue
+                if len(failed_clients) >= len(groq_clients):
+                    print("🔄 All clients failed, resetting...")
+                    reset_failed_clients()
                 continue
+            elif "decommissioned" in error_msg.lower():
+                print(f"⏭️ Model {model} is decommissioned, trying next model...")
+                continue
+            # Continue to next attempt for other errors
             continue
     
-    return "⚠️ All available models failed. Please try again later or check your Groq API key."
+    return "⚠️ All attempts failed. Please try again later or check your Groq API keys."
 
 # ================================================================
 # PROMPT MANAGEMENT
@@ -264,7 +332,6 @@ def get_prompt_template(prompt_type, page_range=None):
 === DETAILED DAILY LESSON PLAN {page_info} ===
 Generate a COMPLETE and DETAILED daily lesson plan with this structure.
 Use information from the provided context (document or web search) to fill in the content.
-If the context contains specific information about the topic, use it directly.
 
 STRUCTURE:
 
@@ -355,7 +422,7 @@ def extract_pdf_text_streaming(filepath):
         import pdfplumber
         text_parts = []
         total_pages = 0
-        page_texts = []  # store each page text with page number
+        page_texts = []
         
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
@@ -366,7 +433,7 @@ def extract_pdf_text_streaming(filepath):
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
-                    page_texts.append((i+1, page_text))  # store page number and text
+                    page_texts.append((i+1, page_text))
                 page = None
                 if (i + 1) % 10 == 0:
                     print(f"📄 Extracted page {i+1}/{max_pages}")
@@ -421,7 +488,7 @@ class EnterpriseRAG:
     def __init__(self):
         self.doc_metadata = {}
         self.chunk_texts = {}
-        self.chunk_pages = {}  # store page number for each chunk
+        self.chunk_pages = {}
         self.faiss_indexes = {}
         self.chunk_size = 300
         self.overlap = 50
@@ -434,39 +501,28 @@ class EnterpriseRAG:
         return os.path.join(FAISS_DIR, f"{session_id}_meta.pkl")
     
     def _chunk_text_with_pages(self, text, page_texts):
-        """Split text into chunks and assign page numbers"""
-        # page_texts is list of (page_num, page_text)
-        # We need to split text into chunks and map to page numbers
-        # Simple approach: concatenate page texts and then split; track which page each chunk belongs to
         chunks = []
         chunk_pages = []
         current_page = 1
         current_text = ""
         for page_num, page_text in page_texts:
-            # Append page text with a marker
             if current_text:
                 current_text += "\n\n"
             current_text += f"[PAGE {page_num}]\n" + page_text
-            # Split current_text into chunks if it exceeds chunk_size
             words = current_text.split()
             while len(words) > self.chunk_size:
                 chunk_words = words[:self.chunk_size]
                 chunk = ' '.join(chunk_words)
                 chunks.append(chunk)
-                # Determine page number for this chunk: find the last [PAGE X] marker
-                # Extract page numbers from chunk
                 pages_in_chunk = re.findall(r'\[PAGE (\d+)\]', chunk)
                 if pages_in_chunk:
-                    # Use the last page number in chunk
                     chunk_pages.append(int(pages_in_chunk[-1]))
                 else:
                     chunk_pages.append(current_page)
                 words = words[self.chunk_size - self.overlap:]
                 current_text = ' '.join(words)
-            # After processing, keep remaining text for next page
             current_text = ' '.join(words)
             current_page = page_num
-        # Final chunks
         if current_text.strip():
             chunks.append(current_text)
             pages_in_chunk = re.findall(r'\[PAGE (\d+)\]', current_text)
@@ -496,17 +552,14 @@ class EnterpriseRAG:
         if page_texts:
             chunks, chunk_pages = self._chunk_text_with_pages(text, page_texts)
         else:
-            # Fallback: chunk without page info
             for chunk in self._chunk_text_streaming(text):
                 chunks.append(chunk)
-                chunk_pages.append(None)  # unknown page
+                chunk_pages.append(None)
         
-        # Store chunks and pages
         self.chunk_texts[session_id] = chunks
         self.chunk_pages[session_id] = chunk_pages
         self.doc_metadata[session_id]['chunk_count'] = len(chunks)
         
-        # Build FAISS index
         embeddings = []
         for chunk in chunks:
             emb = get_embedding(chunk)
@@ -525,7 +578,6 @@ class EnterpriseRAG:
             faiss.write_index(faiss_index, faiss_path)
             self.faiss_indexes[session_id] = faiss_index
         
-        # Save metadata with page info
         meta_path = self.get_metadata_path(session_id)
         with open(meta_path, 'wb') as f:
             pickle.dump({
@@ -591,7 +643,6 @@ class EnterpriseRAG:
         chunks = self.chunk_texts[session_id]
         chunk_pages = self.chunk_pages.get(session_id, [])
         
-        # If page range is specified, filter chunks by page
         if page_range:
             start_page, end_page = page_range
             filtered = []
@@ -600,7 +651,6 @@ class EnterpriseRAG:
                     if start_page <= chunk_pages[i] <= end_page:
                         filtered.append(chunk)
                 else:
-                    # If page unknown, include it (fallback)
                     filtered.append(chunk)
             if filtered:
                 chunks = filtered
@@ -632,7 +682,6 @@ class EnterpriseRAG:
             except:
                 pass
         
-        # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
         for i, chunk in enumerate(chunks[:100]):
@@ -669,7 +718,7 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS (same as before)
+# MODELS
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -807,7 +856,7 @@ admin.add_view(ModelView(PeaceClubPlan, db))
 admin.add_view(ModelView(PeaceClubActivity, db))
 
 # ================================================================
-# ROUTES (same as before with minor changes)
+# ROUTES
 # ================================================================
 @app.route('/')
 def home():
@@ -842,7 +891,6 @@ def course_detail(course_id):
 
 @app.route('/upload_text', methods=['POST'])
 def upload_text():
-    """Upload text directly (up to 10 pages)"""
     data = request.json
     text = data.get('text', '').strip()
     if not text:
@@ -855,7 +903,6 @@ def upload_text():
         session['session_id'] = str(uuid.uuid4())
     session_id = session['session_id']
     filename = f"text_input_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    # For text, we don't have page numbers, so pass None for page_texts
     num_chunks = rag.store_document(session_id, text, filename, pages, page_texts=None)
     session['text_filename'] = filename
     session['text_pages'] = pages
@@ -937,7 +984,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (With Web Search and Page Range)
+# AI CHAT ROUTE
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -952,7 +999,6 @@ def ask_ai():
     print(f"🔍 Detected language: {query_lang}")
     print(f"📝 User query: {user_query[:100]}...")
     
-    # Extract page range from query
     start_page, end_page = extract_page_range(user_query)
     page_range = (start_page, end_page) if start_page is not None else None
     if page_range:
@@ -970,7 +1016,6 @@ def ask_ai():
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
-    # Auto-enable web search if no context and it's a lesson plan or general query
     is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
     if not relevant_chunks and not use_web_search:
         use_web_search = True
@@ -1012,7 +1057,7 @@ def ask_ai():
     })
 
 # ================================================================
-# DOWNLOAD WORD (same as before)
+# DOWNLOAD WORD
 # ================================================================
 
 @app.route('/download_word', methods=['POST'])
@@ -1095,7 +1140,7 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES (unchanged)
+# LESSON PLAN ROUTES
 # ================================================================
 
 @app.route('/lesson')
@@ -1238,7 +1283,7 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES (unchanged)
+# PEACE CLUB ROUTES
 # ================================================================
 
 @app.route('/peaceclub')
@@ -1445,12 +1490,16 @@ with app.app_context():
         db.create_all()
         print("✅ Database tables created/verified successfully.")
         print(f"📊 Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
-        print(f"🤖 Groq API: {'✅ Configured' if GROQ_API_KEY else '❌ Not configured'}")
+        print(f"🔑 Groq API keys configured: {len(groq_clients)}")
+        for i, client in enumerate(groq_clients):
+            key = GROQ_API_KEYS[i] if i < len(GROQ_API_KEYS) else "unknown"
+            print(f"   Key {i+1}: {key[:10]}...")
         print(f"🧠 Groq Model: {GROQ_MODEL}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
         print(f"🌐 Web search: ✅ Enabled (auto-enabled for lesson plans)")
         print(f"📖 Page range support: ✅ Enabled")
+        print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
