@@ -845,46 +845,37 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# GOOGLE VERIFICATION & STATIC ROUTES (አዲስ የተጨመሩ)
+# STATIC ROUTES (Google HTML file routes REMOVED - using meta tag only)
 # ================================================================
-
-@app.route('/googlead9c6a7fd6b5b7ba.html')
-def google_verify_1():
-    return 'google-site-verification: googlead9c6a7fd6b5b7ba.html', 200, {'Content-Type': 'text/html'}
-
-@app.route('/google226f4d63dcf07e52.html')
-def google_verify_2():
-    return 'google-site-verification: google226f4d63dcf07e52.html', 200, {'Content-Type': 'text/html'}
 
 @app.route('/sitemap.xml')
 def serve_sitemap():
     sitemap_path = os.path.join(app.root_path, 'static', 'sitemap.xml')
     if os.path.exists(sitemap_path):
         return send_file(sitemap_path, mimetype='application/xml')
-    # Fallback if file not found
     sitemap_content = '''<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/</loc>
-        <lastmod>2026-07-10</lastmod>
+        <lastmod>2026-07-13</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/about</loc>
-        <lastmod>2026-07-10</lastmod>
+        <lastmod>2026-07-13</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/contact</loc>
-        <lastmod>2026-07-10</lastmod>
+        <lastmod>2026-07-13</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/lesson</loc>
-        <lastmod>2026-07-10</lastmod>
+        <lastmod>2026-07-13</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.9</priority>
     </url>
@@ -936,13 +927,11 @@ def ask_ai():
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
-    # Auto-enable web search for Amharic queries or when no context
     is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
     if query_lang == 'amharic' or (not relevant_chunks and not use_web_search):
         use_web_search = True
         print("🌐 Auto-enabling web search for Amharic query or no context")
     
-    # --- System Prompt ---
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
         amharic_quality_rules = """
@@ -959,7 +948,6 @@ def ask_ai():
 7. 'ጎንደር' በትክክል ፃፍ (ንንደር/ጀንደር አይደለም)።
 8. 'አዲስ አበባ' በትክክል ፃፍ።
 9. ከኢንተርኔት ፍለጋ የተገኘውን መረጃ በቅድሚያ ተጠቀም።
-10. የጂኦግራፊያዊ መረጃዎችን (ከተሞች፣ ዞኖች፣ ክልሎች) በትክክል አቅርብ።
 """
     else:
         language_instruction = "You MUST respond in English."
@@ -1507,8 +1495,8 @@ with app.app_context():
         print(f"🗣️ Language support: ✅ Amharic and English with strong quality rules")
         print(f"🌡️ Temperature: 0.8 for variety and reduced repetition")
         print(f"✅ Anti-Repetition Rule: ✅ Enabled")
-        print(f"✅ Google verification routes: ✅ Added")
-        print(f"✅ Sitemap & Robots routes: ✅ Added")
+        print(f"✅ Sitemap & Robots routes: ✅ Enabled")
+        print(f"✅ Google Meta Tag Verification: ✅ Using HTML tag only")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
