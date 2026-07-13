@@ -179,6 +179,12 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     if not groq_clients:
         return "⚠️ No Groq API keys are configured. Please add GROQ_API_KEYS to environment variables."
     
+    # Detect language for context building
+    if detect_language(user_query) == 'amharic':
+        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
+    else:
+        lang_instruction = "You MUST respond in English."
+    
     # Build context
     context_text = ""
     if context_chunks:
@@ -199,8 +205,10 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     prompt_type = detect_prompt_type(user_query)
     prompt_template = get_prompt_template(prompt_type, page_range)
     
+    # የቋንቋ መመሪያን በፕሮምፕቱ ውስጥ አስገባ
     full_prompt = (
         f"{system_prompt}\n\n"
+        f"=== LANGUAGE INSTRUCTION ===\n{lang_instruction}\n\n"
         f"=== CONTEXT ===\n{context_text}\n\n"
         f"=== USER QUESTION ===\n{user_query}"
     )
@@ -242,7 +250,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     return "⚠️ All attempts failed. Please try again later or check your Groq API keys."
 
 # ================================================================
-# PROMPT MANAGEMENT (የቆየው ኮድ ተጭኗል - ሙሉ የቋንቋ እና ቅርጸት ደንቦች)
+# PROMPT MANAGEMENT (የቆየው ኮድ ሙሉ ሲስተም ፕሮምፕት ተጭኗል)
 # ================================================================
 
 def detect_prompt_type(query):
@@ -268,7 +276,7 @@ def get_prompt_template(prompt_type, page_range=None):
     if page_range:
         start, end = page_range
         page_info = f" (focus on content from pages {start} to {end})"
-    # ከቆየው ኮድ የተወሰዱ አብነቶች - ሙሉ ዝርዝር ከላይ እንዳለ
+    
     base_templates = {
         'daily_lesson': f"""
 === DETAILED DAILY LESSON PLAN {page_info} ===
@@ -911,7 +919,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የተጣመረ - የቆየውን ሙሉ ሲስተም ፕሮምፕት ይጠቀማል)
+# AI CHAT ROUTE (የቆየውን ሙሉ ሲስተም ፕሮምፕት ይጠቀማል)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -1559,6 +1567,7 @@ with app.app_context():
         print(f"🌐 Web search: ✅ Enabled (auto-enabled for lesson plans)")
         print(f"📖 Page range support: ✅ Enabled")
         print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
+        print(f"🗣️ Language support: ✅ Amharic and English")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
