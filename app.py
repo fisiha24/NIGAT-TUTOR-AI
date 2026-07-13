@@ -178,14 +178,8 @@ def extract_page_range(query):
 def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False, page_range=None):
     if not groq_clients:
         return "⚠️ No Groq API keys are configured. Please add GROQ_API_KEYS to environment variables."
-    
-    # Detect language for context building
-    if detect_language(user_query) == 'amharic':
-        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
-    else:
-        lang_instruction = "You MUST respond in English."
-    
-    # Build context
+
+    # Build context (without extra language instruction; system_prompt already has it)
     context_text = ""
     if context_chunks:
         context_text += "\n=== DOCUMENT CONTEXT ===\n"
@@ -201,18 +195,18 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
             context_text += format_search_results(search_results)
     if not context_text.strip():
         context_text = "No context available. Please upload a document or enable web search for specific information."
-    
+
     prompt_type = detect_prompt_type(user_query)
     prompt_template = get_prompt_template(prompt_type, page_range)
-    
-    # የቋንቋ መመሪያን በፕሮምፕቱ ውስጥ አስገባ
+
+    # Build full prompt: system prompt already contains language rule, so we just add context and task template
     full_prompt = (
         f"{system_prompt}\n\n"
-        f"=== LANGUAGE INSTRUCTION ===\n{lang_instruction}\n\n"
+        f"=== TASK ===\n{prompt_template}\n\n"
         f"=== CONTEXT ===\n{context_text}\n\n"
         f"=== USER QUESTION ===\n{user_query}"
     )
-    
+
     max_attempts = len(groq_clients) * len(FALLBACK_MODELS) * 2
     for attempt in range(max_attempts):
         client_index, client = get_next_groq_client()
@@ -250,7 +244,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     return "⚠️ All attempts failed. Please try again later or check your Groq API keys."
 
 # ================================================================
-# PROMPT MANAGEMENT (የቆየው ኮድ ሙሉ ሲስተም ፕሮምፕት ተጭኗል)
+# PROMPT MANAGEMENT (ሙሉ የቆየው ኮድ ሲስተም ፕሮምፕት እዚህ ተጭኗል)
 # ================================================================
 
 def detect_prompt_type(query):
@@ -276,7 +270,6 @@ def get_prompt_template(prompt_type, page_range=None):
     if page_range:
         start, end = page_range
         page_info = f" (focus on content from pages {start} to {end})"
-    
     base_templates = {
         'daily_lesson': f"""
 === DETAILED DAILY LESSON PLAN {page_info} ===
@@ -919,7 +912,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የቆየውን ሙሉ ሲስተም ፕሮምፕት ይጠቀማል)
+# AI CHAT ROUTE (ሙሉ የቆየው ኮድ ሲስተም ፕሮምፕት ተጭኗል)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -1207,7 +1200,7 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES (እንደነበሩ ይቀጥላሉ)
+# LESSON PLAN ROUTES
 # ================================================================
 
 @app.route('/lesson')
@@ -1350,7 +1343,7 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES (እንደነበሩ ይቀጥላሉ)
+# PEACE CLUB ROUTES
 # ================================================================
 
 @app.route('/peaceclub')
