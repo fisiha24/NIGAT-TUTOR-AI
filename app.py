@@ -193,7 +193,6 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
             context_text += "\n=== WEB SEARCH RESULTS ===\n"
             context_text += format_search_results(search_results)
     
-    # Build user message with context
     if context_text.strip():
         user_message = f"{context_text}\n\n=== USER QUESTION ===\n{user_query}"
     else:
@@ -214,7 +213,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                temperature=0.3,
+                temperature=0.7,
                 max_tokens=2048,
                 top_p=0.95
             )
@@ -822,7 +821,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የተሻሻለ - ለአማርኛ ልዩ መመሪያ ያለው)
+# AI CHAT ROUTE (የተሻሻለ - ለአማርኛ ጠንካራ መመሪያ)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -854,25 +853,33 @@ def ask_ai():
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
-    # Auto-enable web search if no context
+    # Auto-enable web search if no context - FORCE for Amharic queries
     is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
-    if not relevant_chunks and not use_web_search:
-        use_web_search = True
-        print("🌐 Auto-enabling web search")
     
-    # --- የተሻሻለ ሲስተም ፕሮምፕት (ለአማርኛ ልዩ መመሪያ ያለው) ---
+    # Force web search for Amharic queries or when no context
+    if query_lang == 'amharic' or (not relevant_chunks and not use_web_search):
+        use_web_search = True
+        print("🌐 Auto-enabling web search for Amharic query or no context")
+    
+    # --- የተሻሻለ ሲስተም ፕሮምፕት (ለአማርኛ ጠንካራ መመሪያ) ---
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
-        # ለአማርኛ ተጨማሪ መመሪያ
         amharic_quality_rules = """
-=== ለአማርኛ ምላሽ ልዩ መመሪያ ===
-1. ምላሱን በግልፅ እና በተዋቀረ መልኩ አዘጋጅ።
-2. ነጥቦችን (bullet points) እና ቁጥሮችን ተጠቀም።
-3. ተመሳሳይ ሐረጎችን አትድገም።
-4. መረጃን በምድብ (category) አደራጅ።
-5. የሰንጠረዥ ቅርጸት ካለ በትክክል አሳይ።
+=== ለአማርኛ ምላሽ ጠንካራ መመሪያ ===
+1. ምላሽህን በሚከተለው መዋቅር አዘጋጅ፡
+   - መግቢያ (Introduction) - አጭር መግለጫ
+   - ዋና ነጥቦች (Main Points) - በቁጥር ወይም በነጥብ
+   - ማጠቃለያ (Conclusion) - አጭር ማጠቃለያ
+2. በነጥብ (bullet points) እና በቁጥሮች ተጠቀም።
+3. ተመሳሳይ ሐረጎችን በፍጹም አትድገም።
+4. እያንዳንዱን አንቀጽ የተለየ ሀሳብ ይዟል።
+5. ሰንጠረዥ ካለ በትክክል አሳይ።
 6. ትክክለኛ የአማርኛ ፊደል እና ስደት ተጠቀም።
-7. በአማርኛ ሲመልሱ 'ጎንደር' በትክክል ይፃፉ (ንንደር/ጀንደር አይደለም)።
+7. 'ጎንደር' በትክክል ፃፍ (ንንደር/ጀንደር አይደለም)።
+8. አንድን ሀሳብ ከአንድ ጊዜ በላይ አትድገም።
+9. መረጃን በምድብ (category) አደራጅ።
+10. ሲያጠቃልሉ ዋና ዋና ነጥቦችን ብቻ ግለጽ።
+11. ለጎንደር ከተማ መረጃ ሲሰጡ፡ ቦታ፣ ታሪክ፣ ታሪካዊ ቦታዎች፣ ባህል እና ኢኮኖሚን በምድብ አደራጁ።
 """
     else:
         language_instruction = "You MUST respond in English."
@@ -1481,10 +1488,11 @@ with app.app_context():
         print(f"🧠 Groq Model: {GROQ_MODEL}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
-        print(f"🌐 Web search: ✅ Enabled (auto-enabled for lesson plans and general queries)")
+        print(f"🌐 Web search: ✅ Enabled (auto-enabled for all Amharic queries)")
         print(f"📖 Page range support: ✅ Enabled")
         print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
-        print(f"🗣️ Language support: ✅ Amharic and English with quality rules for Amharic")
+        print(f"🗣️ Language support: ✅ Amharic and English with strong quality rules for Amharic")
+        print(f"🌡️ Temperature: 0.7 for varied responses")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
