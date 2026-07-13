@@ -27,7 +27,6 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# FAISS storage directory
 FAISS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'faiss_indexes')
 if not os.path.exists(FAISS_DIR):
     os.makedirs(FAISS_DIR)
@@ -35,28 +34,21 @@ if not os.path.exists(FAISS_DIR):
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
-# ================================================================
-# DATABASE INITIALIZATION
-# ================================================================
 db = SQLAlchemy(app)
 
 # ================================================================
 # GROQ API MULTI-KEY CONFIGURATION
 # ================================================================
 
-# Get multiple API keys from environment variable (comma separated)
-# Example: GROQ_API_KEYS="key1,key2,key3"
 GROQ_API_KEYS = os.environ.get('GROQ_API_KEYS', os.environ.get('GROQ_API_KEY', '')).split(',')
 GROQ_API_KEYS = [k.strip() for k in GROQ_API_KEYS if k.strip()]
 
-# Fallback to single key if no multiple keys
 if not GROQ_API_KEYS:
     GROQ_API_KEYS = [os.environ.get('GROQ_API_KEY', '')]
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 FALLBACK_MODELS = ["mixtral-8x7b-32768", "gemma2-9b-it", "llama-3.1-8b-instant"]
 
-# Initialize Groq clients for each API key
 groq_clients = []
 for key in GROQ_API_KEYS:
     if key:
@@ -70,49 +62,38 @@ for key in GROQ_API_KEYS:
 if not groq_clients:
     print("⚠️ No Groq API keys configured!")
 
-# Round-robin counter for distributing requests
 current_client_index = 0
-failed_clients = set()  # Track failed clients
+failed_clients = set()
 
 def get_next_groq_client():
-    """Get the next available Groq client using round-robin"""
     global current_client_index, failed_clients
-    
     available_clients = []
     for i, client in enumerate(groq_clients):
         if i not in failed_clients:
             available_clients.append((i, client))
-    
     if not available_clients:
-        # If all clients failed, reset and try again
         failed_clients.clear()
         available_clients = [(i, client) for i, client in enumerate(groq_clients)]
-    
     if not available_clients:
         return None, None
-    
-    # Round-robin selection
     idx, client = available_clients[current_client_index % len(available_clients)]
     current_client_index += 1
     return idx, client
 
 def mark_client_failed(index):
-    """Mark a client as failed"""
     failed_clients.add(index)
     print(f"⚠️ Marked client {index} as failed")
 
 def reset_failed_clients():
-    """Reset failed clients (call when all fail)"""
     global failed_clients
     failed_clients.clear()
     print("🔄 Reset all failed clients")
 
 # ================================================================
-# WEB SEARCH FUNCTIONS (DuckDuckGo + Google fallback)
+# WEB SEARCH FUNCTIONS
 # ================================================================
 
 def web_search(query, max_results=5):
-    """Search the web using DuckDuckGo; fallback to Google if needed"""
     try:
         with DDGS() as ddgs:
             results = []
@@ -126,8 +107,6 @@ def web_search(query, max_results=5):
                 return results
     except Exception as e:
         print(f"⚠️ DuckDuckGo search error: {e}")
-    
-    # Fallback: Google search using requests and BeautifulSoup
     try:
         return google_search(query, max_results)
     except Exception as e:
@@ -135,7 +114,6 @@ def web_search(query, max_results=5):
         return []
 
 def google_search(query, max_results=5):
-    """Simple Google search using requests and BeautifulSoup (fallback)"""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
@@ -167,7 +145,6 @@ def google_search(query, max_results=5):
     return results
 
 def format_search_results(results):
-    """Format search results for context"""
     if not results:
         return "No web search results available."
     formatted = []
@@ -176,11 +153,10 @@ def format_search_results(results):
     return "\n".join(formatted)
 
 # ================================================================
-# PAGE RANGE EXTRACTION FROM USER QUERY
+# PAGE RANGE EXTRACTION
 # ================================================================
 
 def extract_page_range(query):
-    """Extract page range like 'from page 10 to 20' or 'pages 5-12'"""
     pattern = r'(?:from\s+)?pages?\s*([0-9]+)\s*(?:-|to|–)\s*([0-9]+)'
     match = re.search(pattern, query, re.IGNORECASE)
     if match:
@@ -196,30 +172,18 @@ def extract_page_range(query):
     return None, None
 
 # ================================================================
-# AI RESPONSE FUNCTION (Multi-Key Groq + Web Search + Fallback)
+# AI RESPONSE FUNCTION (Multi-Key + Web Search + Fallback)
 # ================================================================
 
 def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False, page_range=None):
-    """Get AI response using multiple Groq API keys with round-robin"""
-    
     if not groq_clients:
         return "⚠️ No Groq API keys are configured. Please add GROQ_API_KEYS to environment variables."
     
-    # Detect language
-    if detect_language(user_query) == 'amharic':
-        lang_instruction = "You MUST respond in Amharic (በአማርኛ)."
-    else:
-        lang_instruction = "You MUST respond in English."
-    
     # Build context
     context_text = ""
-    
-    # Add document context if available
     if context_chunks:
         context_text += "\n=== DOCUMENT CONTEXT ===\n"
         context_text += "\n\n---\n\n".join(context_chunks[:5])
-    
-    # Add web search results if requested
     if use_web_search:
         search_query = user_query
         if page_range:
@@ -229,37 +193,25 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
         if search_results:
             context_text += "\n=== WEB SEARCH RESULTS ===\n"
             context_text += format_search_results(search_results)
-    
     if not context_text.strip():
         context_text = "No context available. Please upload a document or enable web search for specific information."
     
-    # Detect prompt type
     prompt_type = detect_prompt_type(user_query)
     prompt_template = get_prompt_template(prompt_type, page_range)
     
-    # Build full prompt
     full_prompt = (
         f"{system_prompt}\n\n"
-        f"=== LANGUAGE ===\n{lang_instruction}\n\n"
-        f"=== TASK ===\n{prompt_template}\n\n"
         f"=== CONTEXT ===\n{context_text}\n\n"
         f"=== USER QUESTION ===\n{user_query}"
     )
     
-    # Try with multiple API keys and models
     max_attempts = len(groq_clients) * len(FALLBACK_MODELS) * 2
     for attempt in range(max_attempts):
         client_index, client = get_next_groq_client()
         if client is None:
             break
-        
-        # Select model (try primary first, then fallbacks)
         model_index = attempt % (len(FALLBACK_MODELS) + 1)
-        if model_index == 0:
-            model = GROQ_MODEL
-        else:
-            model = FALLBACK_MODELS[model_index - 1]
-        
+        model = GROQ_MODEL if model_index == 0 else FALLBACK_MODELS[model_index - 1]
         try:
             print(f"🤖 Attempt {attempt+1}: Using client {client_index}, model {model}")
             completion = client.chat.completions.create(
@@ -268,39 +220,29 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": full_prompt}
                 ],
-                temperature=0.1,
+                temperature=0.05,
                 max_tokens=2048,
                 top_p=0.95
             )
             response = completion.choices[0].message.content
             print(f"✅ Success with client {client_index}, model {model}")
-            # Client succeeded, remove from failed if it was there
             if client_index in failed_clients:
                 failed_clients.remove(client_index)
             return response
         except Exception as e:
             error_msg = str(e)
             print(f"⚠️ Client {client_index}, model {model} failed: {error_msg[:100]}")
-            
-            # Check if this is an API key error (rate limit, invalid key, etc.)
             if any(x in error_msg.lower() for x in ['rate limit', '429', 'quota', 'invalid', 'decommissioned']):
                 mark_client_failed(client_index)
-                print(f"⏭️ Marked client {client_index} as failed due to: {error_msg[:50]}")
-                # If all clients failed, reset and continue
                 if len(failed_clients) >= len(groq_clients):
                     print("🔄 All clients failed, resetting...")
                     reset_failed_clients()
                 continue
-            elif "decommissioned" in error_msg.lower():
-                print(f"⏭️ Model {model} is decommissioned, trying next model...")
-                continue
-            # Continue to next attempt for other errors
             continue
-    
     return "⚠️ All attempts failed. Please try again later or check your Groq API keys."
 
 # ================================================================
-# PROMPT MANAGEMENT
+# PROMPT MANAGEMENT (የቆየው ኮድ ተጭኗል - ሙሉ የቋንቋ እና ቅርጸት ደንቦች)
 # ================================================================
 
 def detect_prompt_type(query):
@@ -326,7 +268,7 @@ def get_prompt_template(prompt_type, page_range=None):
     if page_range:
         start, end = page_range
         page_info = f" (focus on content from pages {start} to {end})"
-    
+    # ከቆየው ኮድ የተወሰዱ አብነቶች - ሙሉ ዝርዝር ከላይ እንዳለ
     base_templates = {
         'daily_lesson': f"""
 === DETAILED DAILY LESSON PLAN {page_info} ===
@@ -349,7 +291,6 @@ STRUCTURE:
 """,
         'annual_plan': f"""
 === ANNUAL LESSON PLAN {page_info} ===
-Generate an annual lesson plan with this structure:
 1. SCHOOL INFORMATION
 2. TABLE: Month | Week | Topics | Objectives | Methodology | Evaluation
 """,
@@ -370,12 +311,11 @@ Generate an annual lesson plan with this structure:
 """,
         'exam': f"""
 === EXAM GENERATOR {page_info} ===
-Generate exam questions based on the provided content.
-Include: Multiple choice (≥10), True/False (≥5), Short answer (≥5), Essay (≥2).
+Generate exam questions: Multiple choice (≥10), True/False (≥5), Short answer (≥5), Essay (≥2).
 """,
         'summary': f"""
 === SUMMARY GENERATOR {page_info} ===
-Create a comprehensive summary: main topics, key points, important concepts, key terms, study tips.
+Comprehensive summary: main topics, key points, important concepts, key terms, study tips.
 """,
         'general': f"""
 === GENERAL ASSISTANCE {page_info} ===
@@ -413,21 +353,18 @@ def remove_duplicate_sentences(text):
     return ' '.join(unique)
 
 # ================================================================
-# MEMORY OPTIMIZED PDF EXTRACTION (50 Pages)
+# PDF EXTRACTION (50 pages)
 # ================================================================
 
 def extract_pdf_text_streaming(filepath):
-    """Extract PDF text page by page with memory optimization (up to 50 pages)"""
     try:
         import pdfplumber
         text_parts = []
         total_pages = 0
         page_texts = []
-        
         with pdfplumber.open(filepath) as pdf:
             total_pages = len(pdf.pages)
             max_pages = min(total_pages, 50)
-            
             for i in range(max_pages):
                 page = pdf.pages[i]
                 page_text = page.extract_text()
@@ -437,7 +374,6 @@ def extract_pdf_text_streaming(filepath):
                 page = None
                 if (i + 1) % 10 == 0:
                     print(f"📄 Extracted page {i+1}/{max_pages}")
-        
         full_text = "\n\n".join(text_parts)
         text_parts = None
         return full_text, max_pages if full_text else "No text found in PDF.", 0, page_texts
@@ -445,7 +381,7 @@ def extract_pdf_text_streaming(filepath):
         return f"PDF extraction error: {str(e)}", 0, []
 
 # ================================================================
-# EMBEDDING MODEL (Singleton)
+# EMBEDDING MODEL
 # ================================================================
 
 _embedding_model = None
@@ -481,7 +417,7 @@ def get_embedding(text):
         return np.zeros(384)
 
 # ================================================================
-# MEMORY OPTIMIZED RAG SYSTEM (with page numbers)
+# RAG SYSTEM (with page numbers)
 # ================================================================
 
 class EnterpriseRAG:
@@ -539,7 +475,6 @@ class EnterpriseRAG:
             'word_count': len(text.split()),
             'chunk_count': 0
         }
-        
         try:
             import faiss
             embedding_dim = 384
@@ -585,7 +520,6 @@ class EnterpriseRAG:
                 'chunk_pages': chunk_pages,
                 'metadata': self.doc_metadata[session_id]
             }, f)
-        
         print(f"📚 Stored {len(chunks)} chunks with page info")
         return len(chunks)
     
@@ -636,13 +570,10 @@ class EnterpriseRAG:
     def get_relevant_chunks(self, session_id, query, max_tokens=4000, page_range=None):
         if session_id not in self.chunk_texts:
             self._load_metadata(session_id)
-        
         if session_id not in self.chunk_texts or not self.chunk_texts[session_id]:
             return []
-        
         chunks = self.chunk_texts[session_id]
         chunk_pages = self.chunk_pages.get(session_id, [])
-        
         if page_range:
             start_page, end_page = page_range
             filtered = []
@@ -656,16 +587,13 @@ class EnterpriseRAG:
                 chunks = filtered
         
         faiss_index = self._load_faiss_index(session_id)
-        
         if faiss_index is not None:
             try:
                 import faiss
                 query_emb = get_embedding(query)
                 query_emb = np.array([query_emb]).astype('float32')
-                
                 k = min(15, len(chunks))
                 scores, indices = faiss_index.search(query_emb, k)
-                
                 selected = []
                 total_tokens = 0
                 for idx in indices[0]:
@@ -681,7 +609,6 @@ class EnterpriseRAG:
                 return selected if selected else [chunks[0]]
             except:
                 pass
-        
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
         for i, chunk in enumerate(chunks[:100]):
@@ -707,7 +634,6 @@ class EnterpriseRAG:
             del self.chunk_pages[session_id]
         if session_id in self.faiss_indexes:
             del self.faiss_indexes[session_id]
-        
         faiss_path = self.get_index_path(session_id)
         if os.path.exists(faiss_path):
             os.remove(faiss_path)
@@ -718,7 +644,7 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS
+# MODELS (እንደነበሩ ይቀጥላሉ)
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -858,6 +784,7 @@ admin.add_view(ModelView(PeaceClubActivity, db))
 # ================================================================
 # ROUTES
 # ================================================================
+
 @app.route('/')
 def home():
     try:
@@ -898,7 +825,7 @@ def upload_text():
     word_count = len(text.split())
     pages = (word_count // 250) + 1
     if pages > 10:
-        return jsonify({'success': False, 'message': f'Text exceeds 10 pages ({pages} pages). Please reduce the content.'}), 400
+        return jsonify({'success': False, 'message': f'Text exceeds 10 pages ({pages} pages).'}), 400
     if 'session_id' not in session:
         session['session_id'] = str(uuid.uuid4())
     session_id = session['session_id']
@@ -932,7 +859,7 @@ def upload_file():
             if not text or text.startswith("PDF extraction error"):
                 return jsonify({'success': False, 'message': f'Error extracting text: {text}'}), 500
             if pages > 50:
-                return jsonify({'success': False, 'message': f'PDF has {pages} pages. Maximum is 50 pages.'}), 400
+                return jsonify({'success': False, 'message': f'PDF has {pages} pages. Max 50.'}), 400
             if 'session_id' not in session:
                 session['session_id'] = str(uuid.uuid4())
             session_id = session['session_id']
@@ -943,7 +870,7 @@ def upload_file():
             session['pdf_chunks'] = num_chunks
             return jsonify({
                 'success': True, 
-                'message': f'PDF uploaded and indexed! ({file_size:.1f}MB, {pages} pages, {num_chunks} chunks)',
+                'message': f'PDF uploaded! ({file_size:.1f}MB, {pages} pages, {num_chunks} chunks)',
                 'session_id': session_id,
                 'pages': pages,
                 'chunks': num_chunks
@@ -984,7 +911,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE
+# AI CHAT ROUTE (የተጣመረ - የቆየውን ሙሉ ሲስተም ፕሮምፕት ይጠቀማል)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -1016,28 +943,160 @@ def ask_ai():
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
+    # Auto-enable web search if no context
     is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
     if not relevant_chunks and not use_web_search:
         use_web_search = True
         print("🌐 Auto-enabling web search")
     
+    # --- የቆየው ኮድ ሙሉ ሲስተም ፕሮምፕት (ከቋንቋ ደንቦች፣ ቋሚ ምላሾች፣ ሰንጠረዥ ቅርጸት እና የትምህርት እቅድ አብነቶች ጋር) ---
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
     else:
         language_instruction = "You MUST respond in English."
     
     system_prompt = (
-        "You are 'Nigat AI Tutor'. Created by Teacher Fisaha Melke.\n\n"
-        f"=== LANGUAGE RULE ===\n{language_instruction}\n"
-        "Do NOT switch languages.\n\n"
-        "=== ABOUT THE CREATOR ===\n"
-        "My name is Fisiha Melke. I graduated from Ambo University with a Bachelor's degree in Biology in 2024 (2016 E.C.). I have more than two years of teaching experience in private schools. I hold a Certificate in Video Editing. I am currently developing Nigat Tutor AI, an educational platform designed to support Ethiopian teachers and students.\n\n"
+        "You are 'Nigat AI Tutor'. Your creator is Teacher Fisaha Melke.\n\n"
+        
+        "=== LANGUAGE RULE ===\n"
+        f"{language_instruction}\n"
+        "Do NOT switch languages. The response MUST be in the same language as the user's question.\n\n"
+        
+        "=== FIXED RESPONSES ===\n"
+        "1. If asked about speaking Amharic:\n"
+        "   - English: 'Yes, I can speak Amharic fluently. I can help you with any question.'\n"
+        "   - Amharic: 'አዎ፣ እኔ አማርኛን በደንብ እናገራለሁ። በማንኛውም ጥያቄ ልረዳህ እችላለሁ።'\n\n"
+        
+        "2. If asked 'Who created you?':\n"
+        "   - Amharic: 'እኔን የሰራኝ መምህር ፍስሃ መልኬ ይባላል። እሱ የሁለት ዓመት የመማር እና ማስተማር ልምድ አለው። በቪዲዮ ኢዲቲንግ ዘርፍም ሰርቲፊኬት አለው። ለተማሪዎች በቤት ለቤት ትምህርት እና የጥናት ድጋፍ ይሰጣል። ማንኛውም መረጃ ወይም ግንኙነት ለማግኘት በሚከተሉት ስልክ ቁጥሮች መደወል ይቻላል፦ 0919 704 062 / 0978 127 213 አዲስ አበባ ከተማ ውስጥ ይገኛል።'\n"
+        "   - English: 'I was created by Teacher Fisaha Melke. He has two years of experience in teaching and learning activities. He also holds a certificate in video editing. He provides home-to-home tutoring and academic support for students. For more information or contact, you can call: 0919 704 062 / 0978 127 213. He is based in Addis Ababa.'\n\n"
+        
+        "=== CRITICAL: TABLE FORMATTING RULES ===\n"
+        "You MUST format ALL tables with proper line breaks and Markdown syntax.\n"
+        "Each row of a table MUST be on a NEW LINE.\n"
+        "Example of CORRECT table format:\n"
+        "| Column 1 | Column 2 | Column 3 |\n"
+        "|----------|----------|----------|\n"
+        "| Data 1   | Data 2   | Data 3   |\n"
+        "| Data 4   | Data 5   | Data 6   |\n\n"
+        "Example of INCORRECT format (DO NOT DO THIS):\n"
+        "| Column 1 | Column 2 | Column 3 | |----------|----------|----------| | Data 1 | Data 2 | Data 3 |\n\n"
+        "REMEMBER: Every table row must be on its own separate line.\n\n"
+        
+        "=== DAILY LESSON PLAN TEMPLATE ===\n"
+        "3. When asked to generate a DAILY LESSON PLAN, use this EXACT TEMPLATE with placeholders and TABLES:\n\n"
+        "# SCHOOL INFORMATION\n"
+        "**School Name:** [SCHOOL_NAME]\n"
+        "**Teacher Name:** [TEACHER_NAME]\n"
+        "**Grade and Section:** [GRADE_AND_SECTION]\n"
+        "**Subject:** [SUBJECT]\n"
+        "**Date:** [DATE]\n"
+        "**Unit:** [UNIT_NUMBER - UNIT_TITLE]\n"
+        "**Lesson Topic:** [LESSON_TOPIC]\n"
+        "**Page:** [PAGE]\n\n"
+        "# LESSON OVERVIEW\n"
+        "**Rationale of the topic:** [RATIONALE]\n"
+        "**Pre-requisite Knowledge:** [PREREQUISITES]\n"
+        "**Competencies (Learning Objectives):**\n"
+        "- [COMPETENCY_1]\n"
+        "- [COMPETENCY_2]\n"
+        "- [COMPETENCY_3]\n\n"
+        "# LESSON STAGES (TABLE)\n"
+        "| Stage | Time | Learning Contents | Page | Teacher Activities | Student Activities | Teaching Methodology | Learning Assessment | Teaching Aids | Remark |\n"
+        "|-------|------|-------------------|------|-------------------|---------------------|----------------------|---------------------|---------------|--------|\n"
+        "| Starter / Introduction | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n"
+        "| Main Activities | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n"
+        "| Concluding Activities | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n\n"
+        "# SUPPORT FOR LEARNERS WITH SPECIAL NEEDS (TABLE)\n"
+        "| Category | Support Strategies |\n"
+        "|----------|-------------------|\n"
+        "| Slow-learners | [SLOW_LEARNERS_STRATEGIES] |\n"
+        "| Medium-learners | [MEDIUM_LEARNERS_STRATEGIES] |\n"
+        "| Fast-learners | [FAST_LEARNERS_STRATEGIES] |\n\n"
+        "# APPROVALS (TABLE)\n"
+        "| Role | Name | Signature | Date |\n"
+        "|------|------|-----------|------|\n"
+        "| Teacher | [TEACHER_NAME] | [TEACHER_SIGNATURE] | [DATE] |\n"
+        "| Department Head | [DEPT_HEAD_NAME] | [DEPT_HEAD_SIGNATURE] | [DATE] |\n"
+        "| Vice Principal | [VP_NAME] | [VP_SIGNATURE] | [DATE] |\n\n"
+        "# POST-LESSON TEACHER'S SELF-ASSESSMENT\n"
+        "[SELF_ASSESSMENT]\n\n"
+        
+        "=== ANNUAL LESSON PLAN TEMPLATE ===\n"
+        "4. When asked to generate an ANNUAL LESSON PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
+        "# ANNUAL LESSON PLAN\n"
+        "**School Name:** [SCHOOL_NAME]\n"
+        "**Teacher Name:** [TEACHER_NAME]\n"
+        "**Subject:** [SUBJECT]\n"
+        "**Grade and Section:** [GRADE_AND_SECTION]\n"
+        "**Academic Year:** [YEAR]\n"
+        "**Total Working Days:** [TOTAL_DAYS]\n"
+        "**1st Semester Days:** [SEM1_DAYS]\n"
+        "**2nd Semester Days:** [SEM2_DAYS]\n\n"
+        "**Unit [UNIT_NUMBER]: [UNIT_TITLE]**\n"
+        "**General Objectives:** [UNIT_OBJECTIVES]\n\n"
+        "| Month | Week | Period | Date Range | Page | Topics | Objectives | Methodology | Teaching Aids | Evaluation |\n"
+        "|-------|------|--------|------------|------|--------|------------|-------------|---------------|------------|\n"
+        "| [MONTH_1] | [WEEK_1] | [PERIOD_1] | [DATE_RANGE_1] | [PAGE_1] | [TOPICS_1] | [OBJECTIVES_1] | [METHOD_1] | [AIDS_1] | [EVALUATION_1] |\n"
+        "| [MONTH_2] | [WEEK_2] | [PERIOD_2] | [DATE_RANGE_2] | [PAGE_2] | [TOPICS_2] | [OBJECTIVES_2] | [METHOD_2] | [AIDS_2] | [EVALUATION_2] |\n\n"
+        "**Prepared By:** [PREPARER_NAME]\n"
+        "**Department Head:** [DEPT_HEAD_NAME]\n"
+        "**Director:** [DIRECTOR_NAME]\n"
+        "**Signatures & Dates:** ...\n\n"
+        
+        "=== LABORATORY PLAN TEMPLATE ===\n"
+        "5. When asked to generate a LABORATORY PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
+        "# LABORATORY ANNUAL PLAN\n"
+        "**School Name:** [SCHOOL_NAME]\n"
+        "**Teacher Name:** [TEACHER_NAME]\n"
+        "**Subject:** [SUBJECT]\n"
+        "**Grade:** [GRADE]\n"
+        "**Academic Year:** [YEAR]\n\n"
+        "| Experiment No. | Title | Apparatus | Chemicals | Unit | Page | Month | Date |\n"
+        "|---------------|-------|-----------|-----------|------|------|-------|------|\n"
+        "| [EXP_1] | [TITLE_1] | [APPARATUS_1] | [CHEMICALS_1] | [UNIT_1] | [PAGE_1] | [MONTH_1] | [DATE_1] |\n"
+        "| [EXP_2] | [TITLE_2] | [APPARATUS_2] | [CHEMICALS_2] | [UNIT_2] | [PAGE_2] | [MONTH_2] | [DATE_2] |\n\n"
+        "**Prepared By:** [PREPARER_NAME]\n"
+        "**Approved By:** [APPROVER_NAME]\n"
+        "**Dates:** ...\n\n"
+        
+        "=== PEACE CLUB PLAN TEMPLATE ===\n"
+        "6. When asked to generate a PEACE CLUB PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
+        "# PEACE CLUB ANNUAL PLAN\n"
+        "**School Name:** [SCHOOL_NAME]\n"
+        "**District:** [DISTRICT]\n"
+        "**Woreda:** [WOREDA]\n"
+        "**School Level:** [SCHOOL_LEVEL]\n"
+        "**Club Name:** [CLUB_NAME]\n"
+        "**Teacher Name:** [TEACHER_NAME]\n"
+        "**Secretary Name:** [SECRETARY_NAME]\n"
+        "**Year:** [YEAR]\n"
+        "**Month:** [MONTH]\n\n"
+        "**Vision:** [VISION]\n"
+        "**Mission:** [MISSION]\n"
+        "**Opportunities & Strengths:** [OPPORTUNITIES]\n"
+        "**Challenges & Weaknesses:** [CHALLENGES]\n"
+        "**Solutions:** [SOLUTIONS]\n\n"
+        "| # | Activity | Hamle | Nehase | Meskerem | Tikimt | Hidar | Tahsas | Tir | Yekatit | Megabit | Miazia | Ginbot | Sene |\n"
+        "|---|----------|-------|--------|----------|--------|-------|--------|-----|---------|---------|--------|--------|------|\n"
+        "| 1 | [ACTIVITY_1] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n"
+        "| 2 | [ACTIVITY_2] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n\n"
+        "**Student Members:** [LIST_OF_STUDENTS]\n"
+        "**Teacher Members:** [LIST_OF_TEACHERS]\n\n"
+        
         "=== ACCURACY RULE ===\n"
-        "Provide ONLY accurate information based on the provided context. If the context doesn't contain the answer, use web search results. If neither contains the answer, say so clearly.\n\n"
+        "7. Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.' in the user's language.\n\n"
+        
         "=== AMHARIC SPELLING ===\n"
-        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
-        "=== WEB SEARCH ===\n"
-        f"Web search is {'ENABLED' if use_web_search else 'DISABLED'} for this query.\n"
+        "8. Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
+        
+        "=== FINAL REMINDER ===\n"
+        "9. TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
+        "10. The user should fill in the placeholders [LIKE_THIS] with their own information.\n"
+        "11. When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
+        "12. Do NOT change the format or remove any sections.\n"
+        "13. For Amharic responses, use correct Amharic spelling and script.\n"
+        "14. If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic."
     )
     
     answer = get_ai_response(
@@ -1140,7 +1199,7 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES
+# LESSON PLAN ROUTES (እንደነበሩ ይቀጥላሉ)
 # ================================================================
 
 @app.route('/lesson')
@@ -1283,7 +1342,7 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES
+# PEACE CLUB ROUTES (እንደነበሩ ይቀጥላሉ)
 # ================================================================
 
 @app.route('/peaceclub')
