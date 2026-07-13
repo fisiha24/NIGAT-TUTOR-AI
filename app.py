@@ -193,8 +193,9 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
         if search_results:
             context_text += "\n=== WEB SEARCH RESULTS ===\n"
             context_text += format_search_results(search_results)
+    
+    # Build user message with context prepended (if any)
     if context_text.strip():
-        # Prepend context to user query
         user_message = f"{context_text}\n\n=== USER QUESTION ===\n{user_query}"
     else:
         user_message = user_query
