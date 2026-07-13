@@ -179,7 +179,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     if not groq_clients:
         return "⚠️ No Groq API keys are configured. Please add GROQ_API_KEYS to environment variables."
 
-    # Build context (without extra language instruction; system_prompt already has it)
+    # Build context text from document chunks and web search
     context_text = ""
     if context_chunks:
         context_text += "\n=== DOCUMENT CONTEXT ===\n"
@@ -193,20 +193,13 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
         if search_results:
             context_text += "\n=== WEB SEARCH RESULTS ===\n"
             context_text += format_search_results(search_results)
-    if not context_text.strip():
-        context_text = "No context available. Please upload a document or enable web search for specific information."
+    if context_text.strip():
+        # Prepend context to user query
+        user_message = f"{context_text}\n\n=== USER QUESTION ===\n{user_query}"
+    else:
+        user_message = user_query
 
-    prompt_type = detect_prompt_type(user_query)
-    prompt_template = get_prompt_template(prompt_type, page_range)
-
-    # Build full prompt: system prompt already contains language rule, so we just add context and task template
-    full_prompt = (
-        f"{system_prompt}\n\n"
-        f"=== TASK ===\n{prompt_template}\n\n"
-        f"=== CONTEXT ===\n{context_text}\n\n"
-        f"=== USER QUESTION ===\n{user_query}"
-    )
-
+    # Use the system prompt as-is (already contains language rules, templates, etc.)
     max_attempts = len(groq_clients) * len(FALLBACK_MODELS) * 2
     for attempt in range(max_attempts):
         client_index, client = get_next_groq_client()
@@ -220,9 +213,9 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": full_prompt}
+                    {"role": "user", "content": user_message}
                 ],
-                temperature=0.05,
+                temperature=0.3,  # Increased to reduce repetition
                 max_tokens=2048,
                 top_p=0.95
             )
@@ -242,88 +235,6 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                 continue
             continue
     return "⚠️ All attempts failed. Please try again later or check your Groq API keys."
-
-# ================================================================
-# PROMPT MANAGEMENT (ሙሉ የቆየው ኮድ ሲስተም ፕሮምፕት እዚህ ተጭኗል)
-# ================================================================
-
-def detect_prompt_type(query):
-    query_lower = query.lower()
-    if any(w in query_lower for w in ['daily lesson', 'ዕለታዊ', 'lesson plan']):
-        return 'daily_lesson'
-    elif any(w in query_lower for w in ['annual', 'ዓመታዊ', 'yearly']):
-        return 'annual_plan'
-    elif any(w in query_lower for w in ['semester', 'ሴሚስተር']):
-        return 'semester_plan'
-    elif any(w in query_lower for w in ['monthly', 'ወርሃዊ']):
-        return 'monthly_plan'
-    elif any(w in query_lower for w in ['weekly', 'ሳምንታዊ']):
-        return 'weekly_plan'
-    elif any(w in query_lower for w in ['exam', 'test', 'quiz', 'ፈተና', 'ምዘና']):
-        return 'exam'
-    elif any(w in query_lower for w in ['summary', 'summarize', 'ማጠቃለያ']):
-        return 'summary'
-    return 'general'
-
-def get_prompt_template(prompt_type, page_range=None):
-    page_info = ""
-    if page_range:
-        start, end = page_range
-        page_info = f" (focus on content from pages {start} to {end})"
-    base_templates = {
-        'daily_lesson': f"""
-=== DETAILED DAILY LESSON PLAN {page_info} ===
-Generate a COMPLETE and DETAILED daily lesson plan with this structure.
-Use information from the provided context (document or web search) to fill in the content.
-
-STRUCTURE:
-
-1. SCHOOL INFORMATION: School Name, Teacher Name, Grade/Section, Subject, Date, Unit, Topic, Page
-2. LESSON OBJECTIVES: At least 3-5 specific, measurable objectives (Bloom's Taxonomy)
-3. RATIONALE: Why this lesson is important, connection to previous/future lessons
-4. PREREQUISITES: What students should already know
-5. COMPETENCIES: 3-5 specific competencies students will demonstrate
-6. LESSON STAGES: A DETAILED TABLE with: Stage | Time | Teacher Activities | Student Activities | Methodology | Assessment
-7. TEACHING AIDS: List all materials, visual aids, technology needed
-8. SUPPORT FOR LEARNERS: Table with: Category (Slow/Medium/Fast) | Support Strategies
-9. ASSESSMENT: Formative and Summative
-10. APPROVALS: Table with: Role | Name | Signature | Date
-11. TEACHER'S SELF-ASSESSMENT: What went well, what could be improved
-""",
-        'annual_plan': f"""
-=== ANNUAL LESSON PLAN {page_info} ===
-1. SCHOOL INFORMATION
-2. TABLE: Month | Week | Topics | Objectives | Methodology | Evaluation
-""",
-        'semester_plan': f"""
-=== SEMESTER LESSON PLAN {page_info} ===
-1. SCHOOL INFORMATION
-2. TABLE: Week | Topic | Objectives | Activities | Assessment
-""",
-        'monthly_plan': f"""
-=== MONTHLY LESSON PLAN {page_info} ===
-1. SCHOOL INFORMATION
-2. TABLE: Week | Topic | Objectives | Activities | Resources
-""",
-        'weekly_plan': f"""
-=== WEEKLY LESSON PLAN {page_info} ===
-1. SCHOOL INFORMATION
-2. TABLE: Day | Topic | Objectives | Activities | Homework
-""",
-        'exam': f"""
-=== EXAM GENERATOR {page_info} ===
-Generate exam questions: Multiple choice (≥10), True/False (≥5), Short answer (≥5), Essay (≥2).
-""",
-        'summary': f"""
-=== SUMMARY GENERATOR {page_info} ===
-Comprehensive summary: main topics, key points, important concepts, key terms, study tips.
-""",
-        'general': f"""
-=== GENERAL ASSISTANCE {page_info} ===
-Answer the user's question based on the provided context. Be helpful, accurate, and cite specific information.
-"""
-    }
-    return base_templates.get(prompt_type, base_templates['general'])
 
 # ================================================================
 # HELPER FUNCTIONS
@@ -1200,7 +1111,7 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES
+# LESSON PLAN ROUTES (እንደነበሩ ይቀጥላሉ)
 # ================================================================
 
 @app.route('/lesson')
@@ -1343,7 +1254,7 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES
+# PEACE CLUB ROUTES (እንደነበሩ ይቀጥላሉ)
 # ================================================================
 
 @app.route('/peaceclub')
@@ -1557,10 +1468,10 @@ with app.app_context():
         print(f"🧠 Groq Model: {GROQ_MODEL}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
-        print(f"🌐 Web search: ✅ Enabled (auto-enabled for lesson plans)")
+        print(f"🌐 Web search: ✅ Enabled (auto-enabled for lesson plans and general queries)")
         print(f"📖 Page range support: ✅ Enabled")
         print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
-        print(f"🗣️ Language support: ✅ Amharic and English")
+        print(f"🗣️ Language support: ✅ Amharic and English (full system prompt from old code)")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
