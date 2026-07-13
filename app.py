@@ -198,6 +198,30 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     else:
         user_message = user_query
 
+    enhanced_system_prompt = system_prompt + """
+
+=== ANTI-REPETITION RULE ===
+- NEVER repeat the same sentence, phrase, or idea more than once.
+- Each paragraph MUST contain a NEW and DIFFERENT piece of information.
+- Use bullet points (•) to list multiple distinct items.
+- Keep each bullet point to ONE sentence.
+- Each sentence should add NEW information, not repeat previous content.
+
+=== STRUCTURED RESPONSE RULES ===
+1. Start with a brief introduction (1-2 sentences).
+2. Organize information using numbered lists (1., 2., 3.) or bullet points (•).
+3. Use bullet points for lists of items.
+4. Use tables ONLY when comparing multiple items.
+5. End with a short conclusion (1-2 sentences).
+6. Each section MUST have a clear heading.
+
+=== WEB SEARCH PRIORITY ===
+- Web search results are the PRIMARY source of factual information.
+- Use web search results to provide accurate, up-to-date information.
+- If web search results are available, use them instead of your own knowledge.
+- If you don't have web search results and don't know the answer, say so clearly.
+"""
+
     max_attempts = len(groq_clients) * len(FALLBACK_MODELS) * 2
     for attempt in range(max_attempts):
         client_index, client = get_next_groq_client()
@@ -210,10 +234,10 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
             completion = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": enhanced_system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                temperature=0.7,
+                temperature=0.8,
                 max_tokens=2048,
                 top_p=0.95
             )
@@ -821,7 +845,66 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (የተሻሻለ - ለአማርኛ ጠንካራ መመሪያ)
+# GOOGLE VERIFICATION & STATIC ROUTES (አዲስ የተጨመሩ)
+# ================================================================
+
+@app.route('/googlead9c6a7fd6b5b7ba.html')
+def google_verify_1():
+    return 'google-site-verification: googlead9c6a7fd6b5b7ba.html', 200, {'Content-Type': 'text/html'}
+
+@app.route('/google226f4d63dcf07e52.html')
+def google_verify_2():
+    return 'google-site-verification: google226f4d63dcf07e52.html', 200, {'Content-Type': 'text/html'}
+
+@app.route('/sitemap.xml')
+def serve_sitemap():
+    sitemap_path = os.path.join(app.root_path, 'static', 'sitemap.xml')
+    if os.path.exists(sitemap_path):
+        return send_file(sitemap_path, mimetype='application/xml')
+    # Fallback if file not found
+    sitemap_content = '''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/</loc>
+        <lastmod>2026-07-10</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/about</loc>
+        <lastmod>2026-07-10</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/contact</loc>
+        <lastmod>2026-07-10</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/lesson</loc>
+        <lastmod>2026-07-10</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.9</priority>
+    </url>
+</urlset>'''
+    return sitemap_content, 200, {'Content-Type': 'application/xml'}
+
+@app.route('/robots.txt')
+def serve_robots():
+    robots_path = os.path.join(app.root_path, 'static', 'robots.txt')
+    if os.path.exists(robots_path):
+        return send_file(robots_path, mimetype='text/plain')
+    robots_content = '''User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /static/uploads/
+Sitemap: https://nigat-tutor-ai-1-rb4d.onrender.com/sitemap.xml'''
+    return robots_content, 200, {'Content-Type': 'text/plain'}
+
+# ================================================================
+# AI CHAT ROUTE
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -853,33 +936,30 @@ def ask_ai():
     
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     
-    # Auto-enable web search if no context - FORCE for Amharic queries
+    # Auto-enable web search for Amharic queries or when no context
     is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
-    
-    # Force web search for Amharic queries or when no context
     if query_lang == 'amharic' or (not relevant_chunks and not use_web_search):
         use_web_search = True
         print("🌐 Auto-enabling web search for Amharic query or no context")
     
-    # --- የተሻሻለ ሲስተም ፕሮምፕት (ለአማርኛ ጠንካራ መመሪያ) ---
+    # --- System Prompt ---
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
         amharic_quality_rules = """
 === ለአማርኛ ምላሽ ጠንካራ መመሪያ ===
 1. ምላሽህን በሚከተለው መዋቅር አዘጋጅ፡
-   - መግቢያ (Introduction) - አጭር መግለጫ
+   - መግቢያ (Introduction) - አጭር መግለጫ (1-2 ዓረፍተ ነገር)
    - ዋና ነጥቦች (Main Points) - በቁጥር ወይም በነጥብ
-   - ማጠቃለያ (Conclusion) - አጭር ማጠቃለያ
+   - ማጠቃለያ (Conclusion) - አጭር ማጠቃለያ (1-2 ዓረፍተ ነገር)
 2. በነጥብ (bullet points) እና በቁጥሮች ተጠቀም።
 3. ተመሳሳይ ሐረጎችን በፍጹም አትድገም።
 4. እያንዳንዱን አንቀጽ የተለየ ሀሳብ ይዟል።
-5. ሰንጠረዥ ካለ በትክክል አሳይ።
+5. መረጃን በምድብ (category) አደራጅ።
 6. ትክክለኛ የአማርኛ ፊደል እና ስደት ተጠቀም።
 7. 'ጎንደር' በትክክል ፃፍ (ንንደር/ጀንደር አይደለም)።
-8. አንድን ሀሳብ ከአንድ ጊዜ በላይ አትድገም።
-9. መረጃን በምድብ (category) አደራጅ።
-10. ሲያጠቃልሉ ዋና ዋና ነጥቦችን ብቻ ግለጽ።
-11. ለጎንደር ከተማ መረጃ ሲሰጡ፡ ቦታ፣ ታሪክ፣ ታሪካዊ ቦታዎች፣ ባህል እና ኢኮኖሚን በምድብ አደራጁ።
+8. 'አዲስ አበባ' በትክክል ፃፍ።
+9. ከኢንተርኔት ፍለጋ የተገኘውን መረጃ በቅድሚያ ተጠቀም።
+10. የጂኦግራፊያዊ መረጃዎችን (ከተሞች፣ ዞኖች፣ ክልሎች) በትክክል አቅርብ።
 """
     else:
         language_instruction = "You MUST respond in English."
@@ -911,12 +991,9 @@ def ask_ai():
         "|----------|----------|----------|\n"
         "| Data 1   | Data 2   | Data 3   |\n"
         "| Data 4   | Data 5   | Data 6   |\n\n"
-        "Example of INCORRECT format (DO NOT DO THIS):\n"
-        "| Column 1 | Column 2 | Column 3 | |----------|----------|----------| | Data 1 | Data 2 | Data 3 |\n\n"
         "REMEMBER: Every table row must be on its own separate line.\n\n"
         
         "=== DAILY LESSON PLAN TEMPLATE ===\n"
-        "3. When asked to generate a DAILY LESSON PLAN, use this EXACT TEMPLATE with placeholders and TABLES:\n\n"
         "# SCHOOL INFORMATION\n"
         "**School Name:** [SCHOOL_NAME]\n"
         "**Teacher Name:** [TEACHER_NAME]\n"
@@ -939,7 +1016,7 @@ def ask_ai():
         "| Starter / Introduction | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n"
         "| Main Activities | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n"
         "| Concluding Activities | [TIME] | [CONTENT] | [PAGE] | [TEACHER_ACTIVITIES] | [STUDENT_ACTIVITIES] | [METHODOLOGY] | [ASSESSMENT] | [AIDS] | [REMARK] |\n\n"
-        "# SUPPORT FOR LEARNERS WITH SPECIAL NEEDS (TABLE)\n"
+        "# SUPPORT FOR LEARNERS (TABLE)\n"
         "| Category | Support Strategies |\n"
         "|----------|-------------------|\n"
         "| Slow-learners | [SLOW_LEARNERS_STRATEGIES] |\n"
@@ -954,81 +1031,17 @@ def ask_ai():
         "# POST-LESSON TEACHER'S SELF-ASSESSMENT\n"
         "[SELF_ASSESSMENT]\n\n"
         
-        "=== ANNUAL LESSON PLAN TEMPLATE ===\n"
-        "4. When asked to generate an ANNUAL LESSON PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
-        "# ANNUAL LESSON PLAN\n"
-        "**School Name:** [SCHOOL_NAME]\n"
-        "**Teacher Name:** [TEACHER_NAME]\n"
-        "**Subject:** [SUBJECT]\n"
-        "**Grade and Section:** [GRADE_AND_SECTION]\n"
-        "**Academic Year:** [YEAR]\n"
-        "**Total Working Days:** [TOTAL_DAYS]\n"
-        "**1st Semester Days:** [SEM1_DAYS]\n"
-        "**2nd Semester Days:** [SEM2_DAYS]\n\n"
-        "**Unit [UNIT_NUMBER]: [UNIT_TITLE]**\n"
-        "**General Objectives:** [UNIT_OBJECTIVES]\n\n"
-        "| Month | Week | Period | Date Range | Page | Topics | Objectives | Methodology | Teaching Aids | Evaluation |\n"
-        "|-------|------|--------|------------|------|--------|------------|-------------|---------------|------------|\n"
-        "| [MONTH_1] | [WEEK_1] | [PERIOD_1] | [DATE_RANGE_1] | [PAGE_1] | [TOPICS_1] | [OBJECTIVES_1] | [METHOD_1] | [AIDS_1] | [EVALUATION_1] |\n"
-        "| [MONTH_2] | [WEEK_2] | [PERIOD_2] | [DATE_RANGE_2] | [PAGE_2] | [TOPICS_2] | [OBJECTIVES_2] | [METHOD_2] | [AIDS_2] | [EVALUATION_2] |\n\n"
-        "**Prepared By:** [PREPARER_NAME]\n"
-        "**Department Head:** [DEPT_HEAD_NAME]\n"
-        "**Director:** [DIRECTOR_NAME]\n"
-        "**Signatures & Dates:** ...\n\n"
-        
-        "=== LABORATORY PLAN TEMPLATE ===\n"
-        "5. When asked to generate a LABORATORY PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
-        "# LABORATORY ANNUAL PLAN\n"
-        "**School Name:** [SCHOOL_NAME]\n"
-        "**Teacher Name:** [TEACHER_NAME]\n"
-        "**Subject:** [SUBJECT]\n"
-        "**Grade:** [GRADE]\n"
-        "**Academic Year:** [YEAR]\n\n"
-        "| Experiment No. | Title | Apparatus | Chemicals | Unit | Page | Month | Date |\n"
-        "|---------------|-------|-----------|-----------|------|------|-------|------|\n"
-        "| [EXP_1] | [TITLE_1] | [APPARATUS_1] | [CHEMICALS_1] | [UNIT_1] | [PAGE_1] | [MONTH_1] | [DATE_1] |\n"
-        "| [EXP_2] | [TITLE_2] | [APPARATUS_2] | [CHEMICALS_2] | [UNIT_2] | [PAGE_2] | [MONTH_2] | [DATE_2] |\n\n"
-        "**Prepared By:** [PREPARER_NAME]\n"
-        "**Approved By:** [APPROVER_NAME]\n"
-        "**Dates:** ...\n\n"
-        
-        "=== PEACE CLUB PLAN TEMPLATE ===\n"
-        "6. When asked to generate a PEACE CLUB PLAN, use this EXACT TEMPLATE with TABLES:\n\n"
-        "# PEACE CLUB ANNUAL PLAN\n"
-        "**School Name:** [SCHOOL_NAME]\n"
-        "**District:** [DISTRICT]\n"
-        "**Woreda:** [WOREDA]\n"
-        "**School Level:** [SCHOOL_LEVEL]\n"
-        "**Club Name:** [CLUB_NAME]\n"
-        "**Teacher Name:** [TEACHER_NAME]\n"
-        "**Secretary Name:** [SECRETARY_NAME]\n"
-        "**Year:** [YEAR]\n"
-        "**Month:** [MONTH]\n\n"
-        "**Vision:** [VISION]\n"
-        "**Mission:** [MISSION]\n"
-        "**Opportunities & Strengths:** [OPPORTUNITIES]\n"
-        "**Challenges & Weaknesses:** [CHALLENGES]\n"
-        "**Solutions:** [SOLUTIONS]\n\n"
-        "| # | Activity | Hamle | Nehase | Meskerem | Tikimt | Hidar | Tahsas | Tir | Yekatit | Megabit | Miazia | Ginbot | Sene |\n"
-        "|---|----------|-------|--------|----------|--------|-------|--------|-----|---------|---------|--------|--------|------|\n"
-        "| 1 | [ACTIVITY_1] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n"
-        "| 2 | [ACTIVITY_2] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] | [X] |\n\n"
-        "**Student Members:** [LIST_OF_STUDENTS]\n"
-        "**Teacher Members:** [LIST_OF_TEACHERS]\n\n"
-        
         "=== ACCURACY RULE ===\n"
-        "7. Provide ONLY accurate information. If you don't know, say: 'I don't have accurate information about that.' in the user's language.\n\n"
+        "Provide ONLY accurate information. If you don't know, say so clearly.\n\n"
         
         "=== AMHARIC SPELLING ===\n"
-        "8. Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ).\n\n"
+        "Correct spellings: 'ጎንደር' (not ንንደር/ጀንደር), 'ኢትዮጵያ' (not እትዮጵያ), 'አዲስ አበባ' (not አዲስ አቤባ).\n\n"
         
         "=== FINAL REMINDER ===\n"
-        "9. TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
-        "10. The user should fill in the placeholders [LIKE_THIS] with their own information.\n"
-        "11. When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
-        "12. Do NOT change the format or remove any sections.\n"
-        "13. For Amharic responses, use correct Amharic spelling and script.\n"
-        "14. If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic."
+        "TABLES MUST HAVE PROPER LINE BREAKS. Each row on a new line.\n"
+        "When the user asks for a lesson plan, generate the complete template with ALL sections above.\n"
+        "Do NOT change the format or remove any sections.\n"
+        "If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic."
     )
     
     answer = get_ai_response(
@@ -1491,8 +1504,11 @@ with app.app_context():
         print(f"🌐 Web search: ✅ Enabled (auto-enabled for all Amharic queries)")
         print(f"📖 Page range support: ✅ Enabled")
         print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
-        print(f"🗣️ Language support: ✅ Amharic and English with strong quality rules for Amharic")
-        print(f"🌡️ Temperature: 0.7 for varied responses")
+        print(f"🗣️ Language support: ✅ Amharic and English with strong quality rules")
+        print(f"🌡️ Temperature: 0.8 for variety and reduced repetition")
+        print(f"✅ Anti-Repetition Rule: ✅ Enabled")
+        print(f"✅ Google verification routes: ✅ Added")
+        print(f"✅ Sitemap & Robots routes: ✅ Added")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
