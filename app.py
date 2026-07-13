@@ -172,14 +172,13 @@ def extract_page_range(query):
     return None, None
 
 # ================================================================
-# AI RESPONSE FUNCTION (Multi-Key + Web Search + Fallback)
+# AI RESPONSE FUNCTION
 # ================================================================
 
 def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False, page_range=None):
     if not groq_clients:
         return "⚠️ No Groq API keys are configured. Please add GROQ_API_KEYS to environment variables."
 
-    # Build context text from document chunks and web search
     context_text = ""
     if context_chunks:
         context_text += "\n=== DOCUMENT CONTEXT ===\n"
@@ -194,13 +193,12 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
             context_text += "\n=== WEB SEARCH RESULTS ===\n"
             context_text += format_search_results(search_results)
     
-    # Build user message with context prepended (if any)
+    # Build user message with context
     if context_text.strip():
         user_message = f"{context_text}\n\n=== USER QUESTION ===\n{user_query}"
     else:
         user_message = user_query
 
-    # Use the system prompt as-is (already contains language rules, templates, etc.)
     max_attempts = len(groq_clients) * len(FALLBACK_MODELS) * 2
     for attempt in range(max_attempts):
         client_index, client = get_next_groq_client()
@@ -216,7 +214,7 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                temperature=0.3,  # Increased to reduce repetition
+                temperature=0.3,
                 max_tokens=2048,
                 top_p=0.95
             )
@@ -330,7 +328,7 @@ def get_embedding(text):
         return np.zeros(384)
 
 # ================================================================
-# RAG SYSTEM (with page numbers)
+# RAG SYSTEM
 # ================================================================
 
 class EnterpriseRAG:
@@ -557,7 +555,7 @@ class EnterpriseRAG:
 rag = EnterpriseRAG()
 
 # ================================================================
-# MODELS (እንደነበሩ ይቀጥላሉ)
+# MODELS
 # ================================================================
 class Course(db.Model):
     __tablename__ = 'course'
@@ -824,7 +822,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# AI CHAT ROUTE (ሙሉ የቆየው ኮድ ሲስተም ፕሮምፕት ተጭኗል)
+# AI CHAT ROUTE (የተሻሻለ - ለአማርኛ ልዩ መመሪያ ያለው)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -862,11 +860,23 @@ def ask_ai():
         use_web_search = True
         print("🌐 Auto-enabling web search")
     
-    # --- የቆየው ኮድ ሙሉ ሲስተም ፕሮምፕት (ከቋንቋ ደንቦች፣ ቋሚ ምላሾች፣ ሰንጠረዥ ቅርጸት እና የትምህርት እቅድ አብነቶች ጋር) ---
+    # --- የተሻሻለ ሲስተም ፕሮምፕት (ለአማርኛ ልዩ መመሪያ ያለው) ---
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
+        # ለአማርኛ ተጨማሪ መመሪያ
+        amharic_quality_rules = """
+=== ለአማርኛ ምላሽ ልዩ መመሪያ ===
+1. ምላሱን በግልፅ እና በተዋቀረ መልኩ አዘጋጅ።
+2. ነጥቦችን (bullet points) እና ቁጥሮችን ተጠቀም።
+3. ተመሳሳይ ሐረጎችን አትድገም።
+4. መረጃን በምድብ (category) አደራጅ።
+5. የሰንጠረዥ ቅርጸት ካለ በትክክል አሳይ።
+6. ትክክለኛ የአማርኛ ፊደል እና ስደት ተጠቀም።
+7. በአማርኛ ሲመልሱ 'ጎንደር' በትክክል ይፃፉ (ንንደር/ጀንደር አይደለም)።
+"""
     else:
         language_instruction = "You MUST respond in English."
+        amharic_quality_rules = ""
     
     system_prompt = (
         "You are 'Nigat AI Tutor'. Your creator is Teacher Fisaha Melke.\n\n"
@@ -874,6 +884,8 @@ def ask_ai():
         "=== LANGUAGE RULE ===\n"
         f"{language_instruction}\n"
         "Do NOT switch languages. The response MUST be in the same language as the user's question.\n\n"
+        
+        f"{amharic_quality_rules}\n"
         
         "=== FIXED RESPONSES ===\n"
         "1. If asked about speaking Amharic:\n"
@@ -1112,7 +1124,7 @@ def download_word():
         return jsonify({'error': f'Failed to generate document: {str(e)}'}), 500
 
 # ================================================================
-# LESSON PLAN ROUTES (እንደነበሩ ይቀጥላሉ)
+# LESSON PLAN ROUTES
 # ================================================================
 
 @app.route('/lesson')
@@ -1255,7 +1267,7 @@ def daily_plan():
     return render_template('daily_plan_form.html')
 
 # ================================================================
-# PEACE CLUB ROUTES (እንደነበሩ ይቀጥላሉ)
+# PEACE CLUB ROUTES
 # ================================================================
 
 @app.route('/peaceclub')
@@ -1472,7 +1484,7 @@ with app.app_context():
         print(f"🌐 Web search: ✅ Enabled (auto-enabled for lesson plans and general queries)")
         print(f"📖 Page range support: ✅ Enabled")
         print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
-        print(f"🗣️ Language support: ✅ Amharic and English (full system prompt from old code)")
+        print(f"🗣️ Language support: ✅ Amharic and English with quality rules for Amharic")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
