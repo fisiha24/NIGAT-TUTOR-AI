@@ -845,7 +845,7 @@ def clear_context():
     return jsonify({'message': 'Context cleared successfully'}), 200
 
 # ================================================================
-# STATIC ROUTES (Google HTML file routes REMOVED - using meta tag only)
+# STATIC ROUTES - Google HTML file routes REMOVED
 # ================================================================
 
 @app.route('/sitemap.xml')
@@ -857,25 +857,25 @@ def serve_sitemap():
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/</loc>
-        <lastmod>2026-07-13</lastmod>
+        <lastmod>2026-07-14</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/about</loc>
-        <lastmod>2026-07-13</lastmod>
+        <lastmod>2026-07-14</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/contact</loc>
-        <lastmod>2026-07-13</lastmod>
+        <lastmod>2026-07-14</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
         <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/lesson</loc>
-        <lastmod>2026-07-13</lastmod>
+        <lastmod>2026-07-14</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.9</priority>
     </url>
@@ -1489,11 +1489,11 @@ with app.app_context():
         print(f"🧠 Groq Model: {GROQ_MODEL}")
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
-        print(f"🌐 Web search: ✅ Enabled (auto-enabled for all Amharic queries)")
+        print(f"🌐 Web search: ✅ Enabled")
         print(f"📖 Page range support: ✅ Enabled")
         print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
-        print(f"🗣️ Language support: ✅ Amharic and English with strong quality rules")
-        print(f"🌡️ Temperature: 0.8 for variety and reduced repetition")
+        print(f"🗣️ Language support: ✅ Amharic and English")
+        print(f"🌡️ Temperature: 0.8")
         print(f"✅ Anti-Repetition Rule: ✅ Enabled")
         print(f"✅ Sitemap & Robots routes: ✅ Enabled")
         print(f"✅ Google Meta Tag Verification: ✅ Using HTML tag only")
