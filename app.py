@@ -153,7 +153,7 @@ def format_search_results(results):
     return "\n".join(formatted)
 
 # ================================================================
-# PAGE RANGE EXTRACTION (የተሻሻለ)
+# PAGE RANGE EXTRACTION (ENHANCED)
 # ================================================================
 
 def extract_page_range(query):
@@ -428,7 +428,6 @@ def extract_pdf_text_streaming(filepath):
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
-                    # Store page number and text
                     page_texts.append((i+1, page_text))
                 page = None
                 if (i + 1) % 10 == 0:
@@ -476,7 +475,7 @@ def get_embedding(text):
         return np.zeros(384)
 
 # ================================================================
-# RAG SYSTEM (የተሻሻለ - የገፅ ቁጥር በትክክል ያስቀምጣል)
+# RAG SYSTEM (ENHANCED - PAGE-LEVEL CHUNKING)
 # ================================================================
 
 class EnterpriseRAG:
@@ -485,7 +484,7 @@ class EnterpriseRAG:
         self.chunk_texts = {}
         self.chunk_pages = {}
         self.faiss_indexes = {}
-        self.chunk_size = 200  # ቀንሷል - ለተሻለ ትክክለኛነት
+        self.chunk_size = 200
         self.overlap = 30
         self.max_chunks = 500
     
@@ -496,23 +495,19 @@ class EnterpriseRAG:
         return os.path.join(FAISS_DIR, f"{session_id}_meta.pkl")
     
     def _chunk_text_with_pages(self, text, page_texts):
-        """Split text into chunks and assign page numbers accurately"""
         chunks = []
         chunk_pages = []
         
-        # Process each page separately to ensure accurate page numbers
         for page_num, page_text in page_texts:
             if not page_text or len(page_text.strip()) < 10:
                 continue
             
-            # Split page text into sentences or paragraphs
-            # First try to split by paragraphs (double newline)
+            # Split by paragraphs
             paragraphs = re.split(r'\n\s*\n', page_text)
             if len(paragraphs) > 1:
                 for para in paragraphs:
                     para = para.strip()
                     if para and len(para) > 10:
-                        # If paragraph is too long, split further
                         if len(para) > 500:
                             words = para.split()
                             for i in range(0, len(words), 100):
@@ -524,7 +519,6 @@ class EnterpriseRAG:
                             chunks.append(para)
                             chunk_pages.append(page_num)
             else:
-                # If no paragraphs, split by sentences
                 sentences = re.split(r'(?<=[.!?])\s+', page_text)
                 current_chunk = ""
                 for sent in sentences:
@@ -542,13 +536,11 @@ class EnterpriseRAG:
                     chunks.append(current_chunk)
                     chunk_pages.append(page_num)
         
-        # If no chunks were created, fallback to simple chunking
         if not chunks:
             words = text.split()
             for i in range(0, len(words), self.chunk_size):
                 chunk = ' '.join(words[i:i+self.chunk_size])
                 if chunk.strip():
-                    # Estimate page number based on position
                     approx_page = (i // 250) + 1
                     chunks.append(chunk)
                     chunk_pages.append(approx_page)
@@ -572,11 +564,9 @@ class EnterpriseRAG:
         
         chunks = []
         chunk_pages = []
-        
         if page_texts:
             chunks, chunk_pages = self._chunk_text_with_pages(text, page_texts)
         else:
-            # Fallback: chunk without page info
             for chunk in self._chunk_text_streaming(text):
                 chunks.append(chunk)
                 chunk_pages.append(None)
@@ -585,7 +575,6 @@ class EnterpriseRAG:
         self.chunk_pages[session_id] = chunk_pages
         self.doc_metadata[session_id]['chunk_count'] = len(chunks)
         
-        # Build FAISS index
         embeddings = []
         for chunk in chunks:
             emb = get_embedding(chunk)
@@ -604,7 +593,6 @@ class EnterpriseRAG:
             faiss.write_index(faiss_index, faiss_path)
             self.faiss_indexes[session_id] = faiss_index
         
-        # Save metadata with page info
         meta_path = self.get_metadata_path(session_id)
         with open(meta_path, 'wb') as f:
             pickle.dump({
@@ -662,7 +650,6 @@ class EnterpriseRAG:
         return None
     
     def get_relevant_chunks(self, session_id, query, max_tokens=4000, page_range=None):
-        """Get relevant chunks with improved page number filtering"""
         if session_id not in self.chunk_texts:
             self._load_metadata(session_id)
         
@@ -672,26 +659,22 @@ class EnterpriseRAG:
         chunks = self.chunk_texts[session_id]
         chunk_pages = self.chunk_pages.get(session_id, [])
         
-        # If page range is specified, filter chunks by page first
+        # Filter by page range if specified
         if page_range:
             start_page, end_page = page_range
             filtered_chunks = []
             filtered_pages = []
-            
             for i, chunk in enumerate(chunks):
                 page = chunk_pages[i] if i < len(chunk_pages) else None
                 if page is not None and start_page <= page <= end_page:
                     filtered_chunks.append(chunk)
                     filtered_pages.append(page)
-            
-            # If we found chunks in the specified page range, use them
             if filtered_chunks:
                 print(f"📄 Found {len(filtered_chunks)} chunks from pages {start_page}-{end_page}")
                 chunks = filtered_chunks
                 chunk_pages = filtered_pages
             else:
                 print(f"⚠️ No chunks found for pages {start_page}-{end_page}")
-                # Try to get chunks from nearby pages
                 nearby_chunks = []
                 nearby_pages = []
                 for i, chunk in enumerate(chunks):
@@ -704,26 +687,19 @@ class EnterpriseRAG:
                     chunks = nearby_chunks
                     chunk_pages = nearby_pages
                 else:
-                    # If no chunks found, use all chunks with warning
                     print("⚠️ No chunks found in or near the specified page range. Using all chunks.")
         
-        # If no chunks after filtering, return empty
         if not chunks:
             return []
         
-        # Try FAISS search on filtered chunks
         faiss_index = self._load_faiss_index(session_id)
-        
         if faiss_index is not None and len(chunks) > 0:
             try:
                 import faiss
                 query_emb = get_embedding(query)
                 query_emb = np.array([query_emb]).astype('float32')
-                
-                # Only search within filtered chunks
                 k = min(10, len(chunks))
                 scores, indices = faiss_index.search(query_emb, k)
-                
                 selected = []
                 total_tokens = 0
                 for idx in indices[0]:
@@ -759,7 +735,6 @@ class EnterpriseRAG:
         return self.doc_metadata.get(session_id)
     
     def get_page_count(self, session_id):
-        """Get number of pages in the document"""
         info = self.get_document_info(session_id)
         return info.get('pages', 0) if info else 0
     
@@ -772,7 +747,6 @@ class EnterpriseRAG:
             del self.chunk_pages[session_id]
         if session_id in self.faiss_indexes:
             del self.faiss_indexes[session_id]
-        
         faiss_path = self.get_index_path(session_id)
         if os.path.exists(faiss_path):
             os.remove(faiss_path)
@@ -1051,7 +1025,6 @@ def clear_context():
 
 @app.route('/clear_chat_history', methods=['POST'])
 def clear_chat_history():
-    """Clear the conversation history"""
     if 'chat_history' in session:
         session['chat_history'] = []
     return jsonify({'message': 'Chat history cleared successfully'}), 200
@@ -1107,7 +1080,7 @@ Sitemap: https://nigat-tutor-ai-btd2.onrender.com/sitemap.xml'''
     return robots_content, 200, {'Content-Type': 'text/plain'}
 
 # ================================================================
-# AI CHAT ROUTE (የተሻሻለ - የገፅ ቁጥር በትክክል ይለያል)
+# AI CHAT ROUTE (ENHANCED - WITH QUERY TYPE DETECTION)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -1118,16 +1091,12 @@ def ask_ai():
     if not user_query:
         return jsonify({"answer": "Please ask a question."})
     
-    # ============================================================
     # Conversation History Management
-    # ============================================================
     if 'chat_history' not in session:
         session['chat_history'] = []
     
-    # Add user query to history
     session['chat_history'].append({"role": "user", "content": user_query})
     
-    # Limit history to prevent excessive size
     if len(session['chat_history']) > 20:
         session['chat_history'] = session['chat_history'][-20:]
     
@@ -1135,7 +1104,7 @@ def ask_ai():
     print(f"🔍 Detected language: {query_lang}")
     print(f"📝 User query: {user_query[:100]}...")
     
-    # Extract page range using improved function
+    # Extract page range
     start_page, end_page = extract_page_range(user_query)
     page_range = (start_page, end_page) if start_page is not None else None
     if page_range:
@@ -1153,33 +1122,41 @@ def ask_ai():
         if doc_info:
             print(f"📄 Document: {doc_info.get('filename', 'unknown')} ({document_pages} pages, {doc_info.get('chunk_count', 0)} chunks)")
     
-    # Check if we need to use web search
-    if not relevant_chunks and not use_web_search:
-        if session_id and document_pages > 0:
-            # If document exists but no chunks found for the specific page
-            if page_range:
-                return jsonify({
-                    "answer": f"⚠️ I couldn't find content from pages {start_page}-{end_page} in the uploaded document. The document has {document_pages} pages total.\n\nPlease check the page numbers and try again, or enable web search to get information from the internet.",
-                    "used_web_search": False
-                })
-            else:
-                # No chunks found at all
-                return jsonify({
-                    "answer": "⚠️ I couldn't find relevant information in the uploaded document. Please try rephrasing your question or enable web search.",
-                    "used_web_search": False
-                })
-        else:
-            # No document uploaded, enable web search
-            use_web_search = True
-            print("🌐 Auto-enabling web search - no document")
+    # Enhanced query type detection
+    is_general_question = any(w in user_query.lower() for w in ['what is', 'tell me about', 'explain', 'describe', 'define'])
+    is_question_generator = any(w in user_query.lower() for w in ['generate question', 'create question', 'make question', 'exam question', 'test question', 'quiz question'])
+    is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
     
-    # If web search is enabled or no context, use it
-    if use_web_search or not relevant_chunks:
-        use_web_search = True
-        
+    print(f"📊 Query type: General={is_general_question}, QuestionGen={is_question_generator}, LessonPlan={is_lesson_plan}")
+    
+    # Special handling for "generate question"
+    if is_question_generator:
+        if session_id and document_pages > 0:
+            use_web_search = False
+            print("📝 Question generator - using document context")
+        else:
+            use_web_search = True
+            print("🌐 Question generator - using web search (no document)")
+    elif is_general_question or is_lesson_plan:
+        if not relevant_chunks and not use_web_search:
+            use_web_search = True
+            print("🌐 Auto-enabling web search for general/lesson query")
+    
+    # If document exists but no chunks found for specific page range
+    if not relevant_chunks and not use_web_search and session_id and document_pages > 0:
+        if page_range:
+            return jsonify({
+                "answer": f"⚠️ I couldn't find content from pages {start_page}-{end_page} in the uploaded document.\n\n📄 The document has {document_pages} pages total.\n\n💡 Please check the page numbers and try again, or enable web search.",
+                "used_web_search": False
+            })
+        else:
+            use_web_search = True
+            print("🌐 Auto-enabling web search - no relevant chunks found")
+    
     print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
     print(f"🌐 Web search: {'Enabled' if use_web_search else 'Disabled'}")
     
+    # System Prompt with enhanced rules
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
         amharic_quality_rules = """
@@ -1209,6 +1186,15 @@ def ask_ai():
         "Do NOT switch languages. The response MUST be in the same language as the user's question.\n\n"
         
         f"{amharic_quality_rules}\n"
+        
+        "=== QUESTION GENERATOR RULE ===\n"
+        "When the user asks to 'generate question', 'create question', 'make question', or 'exam question':\n"
+        "1. If there is a document context, generate questions based on the content of that document.\n"
+        "2. If there is no document, use web search results to generate questions on the topic.\n"
+        "3. Generate at least 5 multiple choice questions, 3 true/false questions, and 2 short answer questions.\n"
+        "4. Include an answer key at the end.\n"
+        "5. DO NOT explain the meaning of the word 'generate' - instead, generate actual questions!\n"
+        "6. If the user has asked about a specific topic before, use that topic for generating questions.\n\n"
         
         "=== FIXED RESPONSES ===\n"
         "1. If asked about speaking Amharic:\n"
@@ -1751,6 +1737,7 @@ with app.app_context():
         print(f"✅ Google Meta Tag Verification: ✅ Using HTML tag only")
         print(f"💬 Conversation Memory: ✅ Enabled")
         print(f"📄 Page-level chunking: ✅ Enhanced")
+        print(f"❓ Question Generator: ✅ Enhanced")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
