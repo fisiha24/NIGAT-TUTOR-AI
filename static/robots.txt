@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /admin/
 Disallow: /static/uploads/
-Sitemap: https://nigat-tutor-ai-btd2.onrender.com
+Sitemap: https://nigat-tutor-ai-btd2.onrender.com/sitemap.xml
