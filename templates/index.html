@@ -48,14 +48,12 @@
             color: #ffffff;
         }
 
-        /* ===== CONTAINER ===== */
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
 
-        /* ===== HEADER ===== */
         header {
             background: rgba(255, 255, 255, 0.08);
             backdrop-filter: blur(12px);
@@ -115,7 +113,6 @@
             border-color: transparent;
         }
 
-        /* ===== FLASH MESSAGES ===== */
         .flash {
             padding: 14px 20px;
             border-radius: 12px;
@@ -136,7 +133,6 @@
             color: #feb2b2;
         }
 
-        /* ===== MAIN CONTENT ===== */
         .main-content {
             background: rgba(255, 255, 255, 0.06);
             backdrop-filter: blur(10px);
@@ -161,7 +157,6 @@
             margin-bottom: 25px;
         }
 
-        /* ===== CHAT SECTION ===== */
         .chat-section {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 14px;
@@ -184,7 +179,6 @@
             color: rgba(255, 255, 255, 0.9);
         }
 
-        /* ===== CHAT MESSAGES ===== */
         #chat-messages {
             background: rgba(0, 0, 0, 0.25);
             border-radius: 12px;
@@ -198,12 +192,10 @@
         #chat-messages::-webkit-scrollbar {
             width: 6px;
         }
-
         #chat-messages::-webkit-scrollbar-track {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 3px;
         }
-
         #chat-messages::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 3px;
@@ -231,7 +223,6 @@
         .ai-msg strong {
             color: #f5576c;
         }
-
         .user-msg strong {
             color: #4facfe;
         }
@@ -263,7 +254,6 @@
             background: #218838;
         }
 
-        /* ===== CHAT INPUT ===== */
         .chat-input {
             display: flex;
             gap: 10px;
@@ -290,14 +280,12 @@
         .chat-input textarea::placeholder {
             color: rgba(255, 255, 255, 0.35);
         }
-
         .chat-input textarea:focus {
             outline: none;
             border-color: rgba(79, 172, 254, 0.4);
             background: rgba(255, 255, 255, 0.08);
         }
 
-        /* ===== PLUS BUTTON ===== */
         .plus-btn {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -320,7 +308,6 @@
             transform: rotate(90deg);
         }
 
-        /* ===== DROPDOWN MENU ===== */
         .dropdown-container {
             position: relative;
             display: inline-block;
@@ -367,16 +354,13 @@
             background: rgba(255, 255, 255, 0.08);
             color: #ffffff;
         }
-
         .dropdown-menu .icon {
             font-size: 1.2rem;
         }
-
         .dropdown-menu input[type="file"] {
             display: none;
         }
 
-        /* ===== VOICE BUTTON ===== */
         .voice-btn {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -411,7 +395,6 @@
             100% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0); }
         }
 
-        /* ===== SEND BUTTON ===== */
         .send-btn {
             padding: 14px 30px;
             background: linear-gradient(135deg, #4facfe, #00f2fe);
@@ -430,7 +413,6 @@
             box-shadow: 0 8px 30px rgba(79, 172, 254, 0.3);
         }
 
-        /* ===== UPLOAD SECTION ===== */
         .upload-section {
             background: rgba(255, 255, 255, 0.04);
             border-radius: 12px;
@@ -477,7 +459,6 @@
             box-shadow: 0 8px 30px rgba(245, 87, 108, 0.3);
         }
 
-        /* ===== COURSES ===== */
         .courses-section {
             margin-top: 30px;
         }
@@ -541,7 +522,6 @@
             box-shadow: 0 6px 25px rgba(79, 172, 254, 0.3);
         }
 
-        /* ===== FOOTER ===== */
         footer {
             text-align: center;
             color: rgba(255, 255, 255, 0.3);
@@ -558,47 +538,31 @@
             background-clip: text;
         }
 
-        /* ===== RESPONSIVE ===== */
         @media (max-width: 768px) {
             header {
                 flex-direction: column;
                 align-items: stretch;
                 text-align: center;
             }
-
             nav {
                 justify-content: center;
             }
-
             .main-content h2 {
                 font-size: 1.5rem;
             }
-
             .courses-grid {
                 grid-template-columns: 1fr;
             }
-
             .chat-input {
                 flex-wrap: wrap;
             }
-
             .chat-input textarea {
                 flex: 1 1 100%;
                 order: 1;
             }
-
-            .plus-btn {
-                order: 2;
-            }
-
-            .voice-btn {
-                order: 3;
-            }
-
-            .send-btn {
-                order: 4;
-            }
-
+            .plus-btn { order: 2; }
+            .voice-btn { order: 3; }
+            .send-btn { order: 4; }
             .dropdown-menu {
                 bottom: 55px;
                 left: 0;
@@ -612,7 +576,6 @@
                 height: 44px;
                 font-size: 1.2rem;
             }
-
             .send-btn {
                 padding: 12px 20px;
                 font-size: 14px;
@@ -622,402 +585,324 @@
 </head>
 <body>
 
-    <div class="container">
+<div class="container">
 
-        <!-- ===== HEADER ===== -->
-        <header>
-            <div class="logo">
-                <h1>🌟 Nigat Tutor AI</h1>
-                <p>Free AI Tutor for Ethiopian Students & Teachers | ለኢትዮጵያ ተማሪዎች እና መምህራን ነጻ የAI አስተማሪ</p>
+    <header>
+        <div class="logo">
+            <h1>🌟 Nigat Tutor AI</h1>
+            <p>Free AI Tutor for Ethiopian Students & Teachers | ለኢትዮጵያ ተማሪዎች እና መምህራን ነጻ የAI አስተማሪ</p>
+        </div>
+        <nav>
+            <a href="/" class="active">🏠 Home</a>
+            <a href="/about">ℹ️ About</a>
+            <a href="/contact">📧 Contact</a>
+            <a href="/register">📝 Register</a>
+        </nav>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="main-content">
+        <h2>Welcome to Nigat Tutor AI</h2>
+        <p>Ask me anything about your subjects, lesson plans, or academic questions.</p>
+
+        <div class="chat-section">
+            <div class="chat-header">
+                <h3>💬 Ask Nigat AI</h3>
             </div>
-            <nav>
-                <a href="/" class="active">🏠 Home</a>
-                <a href="/about">ℹ️ About</a>
-                <a href="/contact">📧 Contact</a>
-                <a href="/register">📝 Register</a>
-            </nav>
-        </header>
 
-        <!-- ===== FLASH MESSAGES ===== -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="flash {{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+            <div id="chat-messages">
+                <p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>
+            </div>
 
-        <!-- ===== MAIN CONTENT ===== -->
-        <div class="main-content">
+            <div class="chat-input">
+                <textarea id="user-input" placeholder="Ask anything..." 
+                    onkeypress="if(event.key==='Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
+                    rows="1"></textarea>
 
-            <h2>Welcome to Nigat Tutor AI</h2>
-            <p>Ask me anything about your subjects, lesson plans, or academic questions.</p>
-
-            <!-- ===== CHAT SECTION ===== -->
-            <div class="chat-section">
-
-                <div class="chat-header">
-                    <h3>💬 Ask Nigat AI</h3>
-                </div>
-
-                <!-- ===== CHAT MESSAGES ===== -->
-                <div id="chat-messages">
-                    <p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>
-                </div>
-
-                <!-- ===== CHAT INPUT ===== -->
-                <div class="chat-input">
-                    <textarea id="user-input" placeholder="Ask anything..." 
-                        onkeypress="if(event.key==='Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
-                        rows="1"></textarea>
-
-                    <!-- ===== + PLUS BUTTON ===== -->
-                    <div class="dropdown-container">
-                        <button class="plus-btn" id="dropdownToggle" onclick="toggleDropdown()">+</button>
-                        <div class="dropdown-menu" id="dropdownMenu">
-                            <button onclick="newChat()">
-                                <span class="icon">✨</span> New Chat
-                            </button>
-                            <label>
-                                <span class="icon">📤</span> Upload PDF
-                                <input type="file" id="pdfUpload" accept=".pdf" onchange="uploadPDF(this)">
-                            </label>
-                            <label>
-                                <span class="icon">🖼️</span> Upload Image
-                                <input type="file" id="imageUpload" accept="image/*" onchange="uploadImage(this)">
-                            </label>
-                            <button onclick="clearContext()">
-                                <span class="icon">🗑️</span> Clear Context
-                            </button>
-                        </div>
+                <div class="dropdown-container">
+                    <button class="plus-btn" id="dropdownToggle" onclick="toggleDropdown()">+</button>
+                    <div class="dropdown-menu" id="dropdownMenu">
+                        <button onclick="newChat()"><span class="icon">✨</span> New Chat</button>
+                        <label><span class="icon">📤</span> Upload PDF
+                            <input type="file" id="pdfUpload" accept=".pdf" onchange="uploadPDF(this)">
+                        </label>
+                        <label><span class="icon">🖼️</span> Upload Image
+                            <input type="file" id="imageUpload" accept="image/*" onchange="uploadImage(this)">
+                        </label>
+                        <button onclick="clearContext()"><span class="icon">🗑️</span> Clear Context</button>
                     </div>
-
-                    <!-- ===== VOICE BUTTON ===== -->
-                    <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Voice Input">
-                        🎤
-                    </button>
-
-                    <!-- ===== SEND BUTTON ===== -->
-                    <button class="send-btn" onclick="sendMessage()">Send</button>
                 </div>
 
-                <!-- ===== UPLOAD SECTION ===== -->
-                <div class="upload-section" id="uploadSection">
-                    <h4>📤 Upload PDF</h4>
-                    <form action="/upload" method="POST" enctype="multipart/form-data">
-                        <input type="file" name="file" accept=".pdf" required>
-                        <button type="submit" class="upload-btn">Upload</button>
-                    </form>
-                </div>
-
+                <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Voice Input">🎤</button>
+                <button class="send-btn" onclick="sendMessage()">Send</button>
             </div>
 
-            <!-- ===== COURSES SECTION ===== -->
-            <div class="courses-section">
-                <h3>📚 Our Courses</h3>
-                <div class="courses-grid">
-                    {% if courses %}
-                        {% for course in courses %}
-                            <div class="course-card" style="border-left-color: {{ course.color or '#4facfe' }}">
-                                <h4>{{ course.name }}</h4>
-                                <p>{{ course.description }}</p>
-                                <a href="/course/{{ course.id }}" class="btn">View Course</a>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <p style="color: rgba(255,255,255,0.3);">No courses available yet.</p>
-                    {% endif %}
-                </div>
+            <div class="upload-section" id="uploadSection">
+                <h4>📤 Upload PDF</h4>
+                <form action="/upload" method="POST" enctype="multipart/form-data">
+                    <input type="file" name="file" accept=".pdf" required>
+                    <button type="submit" class="upload-btn">Upload</button>
+                </form>
             </div>
-
         </div>
 
-        <!-- ===== FOOTER ===== -->
-        <footer>
-            &copy; 2026 <span>Nigat Tutor AI</span> | Free AI Tutor for Ethiopian Students & Teachers
-        </footer>
-
+        <div class="courses-section">
+            <h3>📚 Our Courses</h3>
+            <div class="courses-grid">
+                {% if courses %}
+                    {% for course in courses %}
+                        <div class="course-card" style="border-left-color: {{ course.color or '#4facfe' }}">
+                            <h4>{{ course.name }}</h4>
+                            <p>{{ course.description }}</p>
+                            <a href="/course/{{ course.id }}" class="btn">View Course</a>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p style="color: rgba(255,255,255,0.3);">No courses available yet.</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
 
-    <!-- ============================================================ -->
-    <!-- JAVASCRIPT -->
-    <!-- ============================================================ -->
-    <script>
-        // ===== AUTO-EXPAND TEXTAREA =====
-        document.addEventListener('DOMContentLoaded', function() {
-            const textarea = document.getElementById('user-input');
-            textarea.addEventListener('input', function() {
-                this.style.height = 'auto';
-                this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-            });
+    <footer>
+        &copy; 2026 <span>Nigat Tutor AI</span> | Free AI Tutor for Ethiopian Students & Teachers
+    </footer>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const textarea = document.getElementById('user-input');
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
         });
+    });
 
-        // ===== DROPDOWN TOGGLE =====
-        function toggleDropdown() {
-            const menu = document.getElementById('dropdownMenu');
-            menu.classList.toggle('show');
-        }
+    function toggleDropdown() {
+        document.getElementById('dropdownMenu').classList.toggle('show');
+    }
 
-        // Close dropdown when clicking outside
-        document.addEventListener('click', function(event) {
-            const container = document.querySelector('.dropdown-container');
-            if (container && !container.contains(event.target)) {
-                document.getElementById('dropdownMenu').classList.remove('show');
-            }
-        });
-
-        // ===== NEW CHAT =====
-        function newChat() {
-            const messages = document.getElementById('chat-messages');
-            messages.innerHTML = `<p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>`;
-            document.getElementById('user-input').value = '';
+    document.addEventListener('click', function(event) {
+        const container = document.querySelector('.dropdown-container');
+        if (container && !container.contains(event.target)) {
             document.getElementById('dropdownMenu').classList.remove('show');
-            const textarea = document.getElementById('user-input');
-            textarea.style.height = 'auto';
-            textarea.style.height = '50px';
         }
+    });
 
-        // ===== UPLOAD PDF =====
-        function uploadPDF(input) {
-            const file = input.files[0];
-            if (!file) return;
-            
-            const messages = document.getElementById('chat-messages');
-            
-            const loadingMsg = document.createElement('div');
-            loadingMsg.className = 'loading';
-            loadingMsg.id = 'uploadLoading';
-            loadingMsg.textContent = '⏳ Uploading PDF... Please wait...';
-            messages.appendChild(loadingMsg);
-            messages.scrollTop = messages.scrollHeight;
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                const loading = document.getElementById('uploadLoading');
-                if (loading) loading.remove();
-                
-                const msgDiv = document.createElement('div');
-                if (data.success) {
-                    msgDiv.className = 'ai-msg';
-                    msgDiv.style.borderColor = 'rgba(72, 187, 120, 0.4)';
-                    msgDiv.style.background = 'rgba(72, 187, 120, 0.15)';
-                    msgDiv.innerHTML = `✅ ${data.message}`;
-                } else {
-                    msgDiv.className = 'ai-msg';
-                    msgDiv.style.borderColor = 'rgba(245, 101, 101, 0.4)';
-                    msgDiv.style.background = 'rgba(245, 101, 101, 0.15)';
-                    msgDiv.style.color = '#feb2b2';
-                    msgDiv.innerHTML = `❌ ${data.message}`;
-                }
-                messages.appendChild(msgDiv);
-                messages.scrollTop = messages.scrollHeight;
-                
-                input.value = '';
-                document.getElementById('dropdownMenu').classList.remove('show');
-            })
-            .catch(error => {
-                const loading = document.getElementById('uploadLoading');
-                if (loading) loading.remove();
-                
-                const msgDiv = document.createElement('div');
+    function newChat() {
+        const messages = document.getElementById('chat-messages');
+        messages.innerHTML = `<p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>`;
+        document.getElementById('user-input').value = '';
+        document.getElementById('dropdownMenu').classList.remove('show');
+        const textarea = document.getElementById('user-input');
+        textarea.style.height = 'auto';
+        textarea.style.height = '50px';
+    }
+
+    function uploadPDF(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const messages = document.getElementById('chat-messages');
+        const loadingMsg = document.createElement('div');
+        loadingMsg.className = 'loading';
+        loadingMsg.id = 'uploadLoading';
+        loadingMsg.textContent = '⏳ Uploading PDF... Please wait...';
+        messages.appendChild(loadingMsg);
+        messages.scrollTop = messages.scrollHeight;
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch('/upload', { method: 'POST', body: formData })
+        .then(response => response.json())
+        .then(data => {
+            const loading = document.getElementById('uploadLoading');
+            if (loading) loading.remove();
+            const msgDiv = document.createElement('div');
+            if (data.success) {
+                msgDiv.className = 'ai-msg';
+                msgDiv.style.borderColor = 'rgba(72, 187, 120, 0.4)';
+                msgDiv.style.background = 'rgba(72, 187, 120, 0.15)';
+                msgDiv.innerHTML = `✅ ${data.message}`;
+            } else {
                 msgDiv.className = 'ai-msg';
                 msgDiv.style.borderColor = 'rgba(245, 101, 101, 0.4)';
                 msgDiv.style.background = 'rgba(245, 101, 101, 0.15)';
                 msgDiv.style.color = '#feb2b2';
-                msgDiv.innerHTML = '❌ Error uploading PDF. Please try again.';
-                messages.appendChild(msgDiv);
-                messages.scrollTop = messages.scrollHeight;
-                
-                input.value = '';
+                msgDiv.innerHTML = `❌ ${data.message}`;
+            }
+            messages.appendChild(msgDiv);
+            messages.scrollTop = messages.scrollHeight;
+            input.value = '';
+            document.getElementById('dropdownMenu').classList.remove('show');
+        })
+        .catch(error => {
+            const loading = document.getElementById('uploadLoading');
+            if (loading) loading.remove();
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'ai-msg';
+            msgDiv.style.borderColor = 'rgba(245, 101, 101, 0.4)';
+            msgDiv.style.background = 'rgba(245, 101, 101, 0.15)';
+            msgDiv.style.color = '#feb2b2';
+            msgDiv.innerHTML = '❌ Error uploading PDF. Please try again.';
+            messages.appendChild(msgDiv);
+            messages.scrollTop = messages.scrollHeight;
+            input.value = '';
+            document.getElementById('dropdownMenu').classList.remove('show');
+        });
+    }
+
+    function uploadImage(input) {
+        const file = input.files[0];
+        if (file) {
+            const formData = new FormData();
+            formData.append('image', file);
+            fetch('/upload_image', { method: 'POST', body: formData })
+            .then(response => response.json())
+            .then(data => {
+                alert('Image uploaded successfully!');
                 document.getElementById('dropdownMenu').classList.remove('show');
+            })
+            .catch(error => {
+                alert('Error uploading image');
             });
         }
+    }
 
-        // ===== UPLOAD IMAGE =====
-        function uploadImage(input) {
-            const file = input.files[0];
-            if (file) {
-                const formData = new FormData();
-                formData.append('image', file);
-                
-                fetch('/upload_image', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    alert('Image uploaded successfully!');
-                    document.getElementById('dropdownMenu').classList.remove('show');
-                })
-                .catch(error => {
-                    alert('Error uploading image');
-                });
-            }
+    let recognition = null;
+    let isRecording = false;
+
+    function toggleVoice() {
+        const voiceBtn = document.getElementById('voiceBtn');
+        if (isRecording) {
+            if (recognition) recognition.stop();
+            voiceBtn.classList.remove('recording');
+            voiceBtn.textContent = '🎤';
+            isRecording = false;
+            return;
         }
-
-        // ===== VOICE INPUT =====
-        let recognition = null;
-        let isRecording = false;
-
-        function toggleVoice() {
-            const voiceBtn = document.getElementById('voiceBtn');
-            
-            if (isRecording) {
-                if (recognition) {
-                    recognition.stop();
-                }
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.onstart = function() {
+                voiceBtn.classList.add('recording');
+                voiceBtn.textContent = '⏹️';
+                isRecording = true;
+            };
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('user-input').value = transcript;
                 voiceBtn.classList.remove('recording');
                 voiceBtn.textContent = '🎤';
                 isRecording = false;
-                return;
-            }
-
-            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                recognition = new SpeechRecognition();
-                recognition.lang = 'en-US';
-                recognition.continuous = false;
-                recognition.interimResults = false;
-
-                recognition.onstart = function() {
-                    voiceBtn.classList.add('recording');
-                    voiceBtn.textContent = '⏹️';
-                    isRecording = true;
-                };
-
-                recognition.onresult = function(event) {
-                    const transcript = event.results[0][0].transcript;
-                    document.getElementById('user-input').value = transcript;
-                    voiceBtn.classList.remove('recording');
-                    voiceBtn.textContent = '🎤';
-                    isRecording = false;
-                    const textarea = document.getElementById('user-input');
-                    textarea.style.height = 'auto';
-                    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
-                    sendMessage();
-                };
-
-                recognition.onerror = function(event) {
-                    voiceBtn.classList.remove('recording');
-                    voiceBtn.textContent = '🎤';
-                    isRecording = false;
-                    if (event.error !== 'not-allowed') {
-                        alert('Voice recognition error. Please try again.');
-                    }
-                };
-
-                recognition.onend = function() {
-                    voiceBtn.classList.remove('recording');
-                    voiceBtn.textContent = '🎤';
-                    isRecording = false;
-                };
-
-                recognition.start();
-            } else {
-                alert('Voice input is not supported in this browser.');
-            }
+                const textarea = document.getElementById('user-input');
+                textarea.style.height = 'auto';
+                textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+                sendMessage();
+            };
+            recognition.onerror = function(event) {
+                voiceBtn.classList.remove('recording');
+                voiceBtn.textContent = '🎤';
+                isRecording = false;
+                if (event.error !== 'not-allowed') {
+                    alert('Voice recognition error. Please try again.');
+                }
+            };
+            recognition.onend = function() {
+                voiceBtn.classList.remove('recording');
+                voiceBtn.textContent = '🎤';
+                isRecording = false;
+            };
+            recognition.start();
+        } else {
+            alert('Voice input is not supported in this browser.');
         }
+    }
 
-        // ===== CLEAR CONTEXT =====
-        function clearContext() {
-            fetch('/clear_context', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert('Context cleared successfully!');
-                document.getElementById('dropdownMenu').classList.remove('show');
-            })
-            .catch(error => {
-                alert('Error clearing context');
-            });
+    function clearContext() {
+        fetch('/clear_context', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(response => response.json())
+        .then(data => {
+            alert('Context cleared successfully!');
+            document.getElementById('dropdownMenu').classList.remove('show');
+        })
+        .catch(error => {
+            alert('Error clearing context');
+        });
+    }
+
+    function downloadWord(content) {
+        fetch('/download_word', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content, filename: 'Nigat_AI_Response' })
+        })
+        .then(response => response.blob())
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Nigat_AI_Response.docx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+            alert('Error downloading document: ' + error.message);
+        });
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('user-input');
+        const messages = document.getElementById('chat-messages');
+        const query = input.value.trim();
+        if (!query) {
+            alert('Please enter a question.');
+            return;
         }
-
-        // ===== DOWNLOAD WORD FUNCTION =====
-        function downloadWord(content) {
-            fetch('/download_word', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    content: content,
-                    filename: 'Nigat_AI_Response'
-                })
-            })
-            .then(response => response.blob())
-            .then(blob => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'Nigat_AI_Response.docx';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-            })
-            .catch(error => {
-                alert('Error downloading document: ' + error.message);
-            });
-        }
-
-        // ===== SEND MESSAGE =====
-        function sendMessage() {
-            const input = document.getElementById('user-input');
-            const messages = document.getElementById('chat-messages');
-            const query = input.value.trim();
-
-            if (!query) {
-                alert('Please enter a question.');
-                return;
-            }
-
-            messages.innerHTML += `<div class="user-msg"><strong>You:</strong> ${query}</div>`;
-            messages.innerHTML += `<div class="loading">🤔 Thinking...</div>`;
-            input.value = '';
-            input.style.height = 'auto';
-            input.style.height = '50px';
+        messages.innerHTML += `<div class="user-msg"><strong>You:</strong> ${query}</div>`;
+        messages.innerHTML += `<div class="loading">🤔 Thinking...</div>`;
+        input.value = '';
+        input.style.height = 'auto';
+        input.style.height = '50px';
+        messages.scrollTop = messages.scrollHeight;
+        fetch('/ask_ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const loading = document.querySelector('.loading');
+            if (loading) loading.remove();
+            const formatted = data.answer.replace(/\n/g, '<br>');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'ai-msg';
+            msgDiv.innerHTML = `<strong>🤖 Nigat AI:</strong><br>${formatted}`;
+            const downloadBtn = document.createElement('button');
+            downloadBtn.className = 'btn-download';
+            downloadBtn.textContent = '📥 Download Word';
+            downloadBtn.onclick = function() { downloadWord(data.answer); };
+            msgDiv.appendChild(downloadBtn);
+            messages.appendChild(msgDiv);
             messages.scrollTop = messages.scrollHeight;
-
-            fetch('/ask_ai', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: query })
-            })
-            .then(response => response.json())
-            .then(data => {
-                const loading = document.querySelector('.loading');
-                if (loading) loading.remove();
-                const formatted = data.answer.replace(/\n/g, '<br>');
-                
-                const msgDiv = document.createElement('div');
-                msgDiv.className = 'ai-msg';
-                msgDiv.innerHTML = `<strong>🤖 Nigat AI:</strong><br>${formatted}`;
-                
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'btn-download';
-                downloadBtn.textContent = '📥 Download Word';
-                downloadBtn.onclick = function() {
-                    downloadWord(data.answer);
-                };
-                
-                msgDiv.appendChild(downloadBtn);
-                messages.appendChild(msgDiv);
-                messages.scrollTop = messages.scrollHeight;
-            })
-            .catch(() => {
-                const loading = document.querySelector('.loading');
-                if (loading) loading.remove();
-                messages.innerHTML += `<div class="ai-msg" style="background:rgba(245,101,101,0.15);border-color:rgba(245,101,101,0.2);color:#feb2b2;">❌ Error. Please try again.</div>`;
-            });
-        }
-    </script>
+        })
+        .catch(() => {
+            const loading = document.querySelector('.loading');
+            if (loading) loading.remove();
+            messages.innerHTML += `<div class="ai-msg" style="background:rgba(245,101,101,0.15);border-color:rgba(245,101,101,0.2);color:#feb2b2;">❌ Error. Please try again.</div>`;
+        });
+    }
+</script>
 
 </body>
 </html>
