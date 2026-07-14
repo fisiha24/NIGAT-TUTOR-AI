@@ -856,25 +856,25 @@ def serve_sitemap():
     sitemap_content = '''<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/</loc>
+        <loc>https://nigat-tutor-ai-btd2.onrender.com/</loc>
         <lastmod>2026-07-14</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
     <url>
-        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/about</loc>
+        <loc>https://nigat-tutor-ai-btd2.onrender.com/about</loc>
         <lastmod>2026-07-14</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
-        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/contact</loc>
+        <loc>https://nigat-tutor-ai-btd2.onrender.com/contact</loc>
         <lastmod>2026-07-14</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
-        <loc>https://nigat-tutor-ai-1-rb4d.onrender.com/lesson</loc>
+        <loc>https://nigat-tutor-ai-btd2.onrender.com/lesson</loc>
         <lastmod>2026-07-14</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.9</priority>
@@ -891,7 +891,7 @@ def serve_robots():
 Allow: /
 Disallow: /admin/
 Disallow: /static/uploads/
-Sitemap: https://nigat-tutor-ai-1-rb4d.onrender.com/sitemap.xml'''
+Sitemap: https://nigat-tutor-ai-btd2.onrender.com/sitemap.xml'''
     return robots_content, 200, {'Content-Type': 'text/plain'}
 
 # ================================================================
