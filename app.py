@@ -153,26 +153,46 @@ def format_search_results(results):
     return "\n".join(formatted)
 
 # ================================================================
-# PAGE RANGE EXTRACTION
+# PAGE RANGE EXTRACTION (የተሻሻለ)
 # ================================================================
 
 def extract_page_range(query):
-    pattern = r'(?:from\s+)?pages?\s*([0-9]+)\s*(?:-|to|–)\s*([0-9]+)'
-    match = re.search(pattern, query, re.IGNORECASE)
+    """Extract page numbers from user query with improved pattern matching"""
+    # Pattern 1: "page 7" or "page 7-10" or "pages 7-10"
+    pattern1 = r'(?:page|pages?)\s*([0-9]+)(?:\s*-\s*([0-9]+))?'
+    match = re.search(pattern1, query, re.IGNORECASE)
+    if match:
+        start = int(match.group(1))
+        if match.group(2):
+            end = int(match.group(2))
+            if start <= end:
+                return start, end
+        return start, start
+    
+    # Pattern 2: "from page 7 to 10" or "from pages 7 to 10"
+    pattern2 = r'(?:from\s+)?pages?\s*([0-9]+)\s*(?:-|to|–)\s*([0-9]+)'
+    match = re.search(pattern2, query, re.IGNORECASE)
     if match:
         start = int(match.group(1))
         end = int(match.group(2))
         if start <= end:
             return start, end
-    single_pattern = r'page\s*([0-9]+)'
-    match = re.search(single_pattern, query, re.IGNORECASE)
+    
+    # Pattern 3: "p.7" or "pp.7-10"
+    pattern3 = r'p{1,2}\.\s*([0-9]+)(?:\s*-\s*([0-9]+))?'
+    match = re.search(pattern3, query, re.IGNORECASE)
     if match:
-        p = int(match.group(1))
-        return p, p
+        start = int(match.group(1))
+        if match.group(2):
+            end = int(match.group(2))
+            if start <= end:
+                return start, end
+        return start, start
+    
     return None, None
 
 # ================================================================
-# AI RESPONSE FUNCTION
+# AI RESPONSE FUNCTION (Original - kept for compatibility)
 # ================================================================
 
 def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_search=False, page_range=None):
@@ -259,6 +279,110 @@ def get_ai_response(system_prompt, user_query, context_chunks=None, use_web_sear
     return "⚠️ All attempts failed. Please try again later or check your Groq API keys."
 
 # ================================================================
+# AI RESPONSE FUNCTION WITH HISTORY
+# ================================================================
+
+def get_ai_response_with_history(system_prompt, user_query, chat_history, context_chunks=None, use_web_search=False, page_range=None):
+    """Get AI response using Groq with conversation history"""
+    
+    if not groq_clients:
+        return "⚠️ No Groq API keys are configured. Please add GROQ_API_KEYS to environment variables."
+
+    context_text = ""
+    if context_chunks:
+        context_text += "\n=== DOCUMENT CONTEXT ===\n"
+        context_text += "\n\n---\n\n".join(context_chunks[:5])
+    if use_web_search:
+        search_query = user_query
+        if page_range:
+            start, end = page_range
+            search_query += f" pages {start} to {end}"
+        search_results = web_search(search_query)
+        if search_results:
+            context_text += "\n=== WEB SEARCH RESULTS ===\n"
+            context_text += format_search_results(search_results)
+    
+    # Build messages array with conversation history
+    messages = [
+        {"role": "system", "content": system_prompt}
+    ]
+    
+    # Add conversation history
+    for msg in chat_history:
+        if msg["role"] == "user":
+            # For user messages, add context if available
+            if context_text:
+                user_content = f"{context_text}\n\n=== USER QUESTION ===\n{msg['content']}"
+            else:
+                user_content = msg['content']
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages.append({"role": "assistant", "content": msg["content"]})
+
+    enhanced_system_prompt = system_prompt + """
+
+=== ANTI-REPETITION RULE ===
+- NEVER repeat the same sentence, phrase, or idea more than once.
+- Each paragraph MUST contain a NEW and DIFFERENT piece of information.
+- Use bullet points (•) to list multiple distinct items.
+- Keep each bullet point to ONE sentence.
+- Each sentence should add NEW information, not repeat previous content.
+
+=== STRUCTURED RESPONSE RULES ===
+1. Start with a brief introduction (1-2 sentences).
+2. Organize information using numbered lists (1., 2., 3.) or bullet points (•).
+3. Use bullet points for lists of items.
+4. Use tables ONLY when comparing multiple items.
+5. End with a short conclusion (1-2 sentences).
+6. Each section MUST have a clear heading.
+
+=== WEB SEARCH PRIORITY ===
+- Web search results are the PRIMARY source of factual information.
+- Use web search results to provide accurate, up-to-date information.
+- If web search results are available, use them instead of your own knowledge.
+- If you don't have web search results and don't know the answer, say so clearly.
+
+=== CONVERSATION MEMORY ===
+- You have access to the conversation history above.
+- Use it to maintain context and answer follow-up questions.
+- Reference previous exchanges when relevant.
+- Do NOT repeat what was already said unless necessary.
+"""
+
+    max_attempts = len(groq_clients) * len(FALLBACK_MODELS) * 2
+    for attempt in range(max_attempts):
+        client_index, client = get_next_groq_client()
+        if client is None:
+            break
+        model_index = attempt % (len(FALLBACK_MODELS) + 1)
+        model = GROQ_MODEL if model_index == 0 else FALLBACK_MODELS[model_index - 1]
+        try:
+            print(f"🤖 Attempt {attempt+1}: Using client {client_index}, model {model}")
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.8,
+                max_tokens=2048,
+                top_p=0.95
+            )
+            response = completion.choices[0].message.content
+            print(f"✅ Success with client {client_index}, model {model}")
+            if client_index in failed_clients:
+                failed_clients.remove(client_index)
+            return response
+        except Exception as e:
+            error_msg = str(e)
+            print(f"⚠️ Client {client_index}, model {model} failed: {error_msg[:100]}")
+            if any(x in error_msg.lower() for x in ['rate limit', '429', 'quota', 'invalid', 'decommissioned']):
+                mark_client_failed(client_index)
+                if len(failed_clients) >= len(groq_clients):
+                    print("🔄 All clients failed, resetting...")
+                    reset_failed_clients()
+                continue
+            continue
+    return "⚠️ All attempts failed. Please try again later or check your Groq API keys."
+
+# ================================================================
 # HELPER FUNCTIONS
 # ================================================================
 
@@ -304,6 +428,7 @@ def extract_pdf_text_streaming(filepath):
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
+                    # Store page number and text
                     page_texts.append((i+1, page_text))
                 page = None
                 if (i + 1) % 10 == 0:
@@ -351,7 +476,7 @@ def get_embedding(text):
         return np.zeros(384)
 
 # ================================================================
-# RAG SYSTEM
+# RAG SYSTEM (የተሻሻለ - የገፅ ቁጥር በትክክል ያስቀምጣል)
 # ================================================================
 
 class EnterpriseRAG:
@@ -360,9 +485,9 @@ class EnterpriseRAG:
         self.chunk_texts = {}
         self.chunk_pages = {}
         self.faiss_indexes = {}
-        self.chunk_size = 300
-        self.overlap = 50
-        self.max_chunks = 400
+        self.chunk_size = 200  # ቀንሷል - ለተሻለ ትክክለኛነት
+        self.overlap = 30
+        self.max_chunks = 500
     
     def get_index_path(self, session_id):
         return os.path.join(FAISS_DIR, f"{session_id}.faiss")
@@ -371,35 +496,63 @@ class EnterpriseRAG:
         return os.path.join(FAISS_DIR, f"{session_id}_meta.pkl")
     
     def _chunk_text_with_pages(self, text, page_texts):
+        """Split text into chunks and assign page numbers accurately"""
         chunks = []
         chunk_pages = []
-        current_page = 1
-        current_text = ""
+        
+        # Process each page separately to ensure accurate page numbers
         for page_num, page_text in page_texts:
-            if current_text:
-                current_text += "\n\n"
-            current_text += f"[PAGE {page_num}]\n" + page_text
-            words = current_text.split()
-            while len(words) > self.chunk_size:
-                chunk_words = words[:self.chunk_size]
-                chunk = ' '.join(chunk_words)
-                chunks.append(chunk)
-                pages_in_chunk = re.findall(r'\[PAGE (\d+)\]', chunk)
-                if pages_in_chunk:
-                    chunk_pages.append(int(pages_in_chunk[-1]))
-                else:
-                    chunk_pages.append(current_page)
-                words = words[self.chunk_size - self.overlap:]
-                current_text = ' '.join(words)
-            current_text = ' '.join(words)
-            current_page = page_num
-        if current_text.strip():
-            chunks.append(current_text)
-            pages_in_chunk = re.findall(r'\[PAGE (\d+)\]', current_text)
-            if pages_in_chunk:
-                chunk_pages.append(int(pages_in_chunk[-1]))
+            if not page_text or len(page_text.strip()) < 10:
+                continue
+            
+            # Split page text into sentences or paragraphs
+            # First try to split by paragraphs (double newline)
+            paragraphs = re.split(r'\n\s*\n', page_text)
+            if len(paragraphs) > 1:
+                for para in paragraphs:
+                    para = para.strip()
+                    if para and len(para) > 10:
+                        # If paragraph is too long, split further
+                        if len(para) > 500:
+                            words = para.split()
+                            for i in range(0, len(words), 100):
+                                chunk = ' '.join(words[i:i+100])
+                                if chunk.strip():
+                                    chunks.append(chunk)
+                                    chunk_pages.append(page_num)
+                        else:
+                            chunks.append(para)
+                            chunk_pages.append(page_num)
             else:
-                chunk_pages.append(current_page)
+                # If no paragraphs, split by sentences
+                sentences = re.split(r'(?<=[.!?])\s+', page_text)
+                current_chunk = ""
+                for sent in sentences:
+                    sent = sent.strip()
+                    if not sent:
+                        continue
+                    if len(current_chunk) + len(sent) < 300:
+                        current_chunk += " " + sent if current_chunk else sent
+                    else:
+                        if current_chunk:
+                            chunks.append(current_chunk)
+                            chunk_pages.append(page_num)
+                        current_chunk = sent
+                if current_chunk:
+                    chunks.append(current_chunk)
+                    chunk_pages.append(page_num)
+        
+        # If no chunks were created, fallback to simple chunking
+        if not chunks:
+            words = text.split()
+            for i in range(0, len(words), self.chunk_size):
+                chunk = ' '.join(words[i:i+self.chunk_size])
+                if chunk.strip():
+                    # Estimate page number based on position
+                    approx_page = (i // 250) + 1
+                    chunks.append(chunk)
+                    chunk_pages.append(approx_page)
+        
         return chunks, chunk_pages
     
     def store_document(self, session_id, text, filename, pages=0, page_texts=None):
@@ -409,6 +562,7 @@ class EnterpriseRAG:
             'word_count': len(text.split()),
             'chunk_count': 0
         }
+        
         try:
             import faiss
             embedding_dim = 384
@@ -418,9 +572,11 @@ class EnterpriseRAG:
         
         chunks = []
         chunk_pages = []
+        
         if page_texts:
             chunks, chunk_pages = self._chunk_text_with_pages(text, page_texts)
         else:
+            # Fallback: chunk without page info
             for chunk in self._chunk_text_streaming(text):
                 chunks.append(chunk)
                 chunk_pages.append(None)
@@ -429,6 +585,7 @@ class EnterpriseRAG:
         self.chunk_pages[session_id] = chunk_pages
         self.doc_metadata[session_id]['chunk_count'] = len(chunks)
         
+        # Build FAISS index
         embeddings = []
         for chunk in chunks:
             emb = get_embedding(chunk)
@@ -447,6 +604,7 @@ class EnterpriseRAG:
             faiss.write_index(faiss_index, faiss_path)
             self.faiss_indexes[session_id] = faiss_index
         
+        # Save metadata with page info
         meta_path = self.get_metadata_path(session_id)
         with open(meta_path, 'wb') as f:
             pickle.dump({
@@ -454,7 +612,9 @@ class EnterpriseRAG:
                 'chunk_pages': chunk_pages,
                 'metadata': self.doc_metadata[session_id]
             }, f)
+        
         print(f"📚 Stored {len(chunks)} chunks with page info")
+        print(f"📄 Pages: {list(set([p for p in chunk_pages if p is not None]))}")
         return len(chunks)
     
     def _chunk_text_streaming(self, text):
@@ -502,32 +662,68 @@ class EnterpriseRAG:
         return None
     
     def get_relevant_chunks(self, session_id, query, max_tokens=4000, page_range=None):
+        """Get relevant chunks with improved page number filtering"""
         if session_id not in self.chunk_texts:
             self._load_metadata(session_id)
+        
         if session_id not in self.chunk_texts or not self.chunk_texts[session_id]:
             return []
+        
         chunks = self.chunk_texts[session_id]
         chunk_pages = self.chunk_pages.get(session_id, [])
+        
+        # If page range is specified, filter chunks by page first
         if page_range:
             start_page, end_page = page_range
-            filtered = []
+            filtered_chunks = []
+            filtered_pages = []
+            
             for i, chunk in enumerate(chunks):
-                if i < len(chunk_pages) and chunk_pages[i] is not None:
-                    if start_page <= chunk_pages[i] <= end_page:
-                        filtered.append(chunk)
+                page = chunk_pages[i] if i < len(chunk_pages) else None
+                if page is not None and start_page <= page <= end_page:
+                    filtered_chunks.append(chunk)
+                    filtered_pages.append(page)
+            
+            # If we found chunks in the specified page range, use them
+            if filtered_chunks:
+                print(f"📄 Found {len(filtered_chunks)} chunks from pages {start_page}-{end_page}")
+                chunks = filtered_chunks
+                chunk_pages = filtered_pages
+            else:
+                print(f"⚠️ No chunks found for pages {start_page}-{end_page}")
+                # Try to get chunks from nearby pages
+                nearby_chunks = []
+                nearby_pages = []
+                for i, chunk in enumerate(chunks):
+                    page = chunk_pages[i] if i < len(chunk_pages) else None
+                    if page is not None and start_page - 1 <= page <= end_page + 1:
+                        nearby_chunks.append(chunk)
+                        nearby_pages.append(page)
+                if nearby_chunks:
+                    print(f"📄 Found {len(nearby_chunks)} chunks from nearby pages")
+                    chunks = nearby_chunks
+                    chunk_pages = nearby_pages
                 else:
-                    filtered.append(chunk)
-            if filtered:
-                chunks = filtered
+                    # If no chunks found, use all chunks with warning
+                    print("⚠️ No chunks found in or near the specified page range. Using all chunks.")
         
+        # If no chunks after filtering, return empty
+        if not chunks:
+            return []
+        
+        # Try FAISS search on filtered chunks
         faiss_index = self._load_faiss_index(session_id)
-        if faiss_index is not None:
+        
+        if faiss_index is not None and len(chunks) > 0:
             try:
                 import faiss
                 query_emb = get_embedding(query)
                 query_emb = np.array([query_emb]).astype('float32')
-                k = min(15, len(chunks))
+                
+                # Only search within filtered chunks
+                k = min(10, len(chunks))
                 scores, indices = faiss_index.search(query_emb, k)
+                
                 selected = []
                 total_tokens = 0
                 for idx in indices[0]:
@@ -538,26 +734,34 @@ class EnterpriseRAG:
                     if total_tokens + estimated <= max_tokens:
                         selected.append(chunk)
                         total_tokens += estimated
-                    if len(selected) >= 5:
+                    if len(selected) >= 4:
                         break
-                return selected if selected else [chunks[0]]
-            except:
-                pass
+                if selected:
+                    return selected
+            except Exception as e:
+                print(f"⚠️ FAISS search error: {e}")
+        
+        # Keyword fallback
         query_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', query.lower()))
         scored = []
         for i, chunk in enumerate(chunks[:100]):
             chunk_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', chunk.lower()))
             overlap = len(query_words & chunk_words)
             if overlap > 0:
-                scored.append((overlap, chunk))
+                scored.append((overlap, chunk, i))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [chunk for _, chunk in scored[:4]]
+        return [chunk for _, chunk, _ in scored[:4]]
     
     def get_document_info(self, session_id):
         if session_id in self.doc_metadata:
             return self.doc_metadata[session_id]
         self._load_metadata(session_id)
         return self.doc_metadata.get(session_id)
+    
+    def get_page_count(self, session_id):
+        """Get number of pages in the document"""
+        info = self.get_document_info(session_id)
+        return info.get('pages', 0) if info else 0
     
     def clear(self, session_id):
         if session_id in self.doc_metadata:
@@ -568,6 +772,7 @@ class EnterpriseRAG:
             del self.chunk_pages[session_id]
         if session_id in self.faiss_indexes:
             del self.faiss_indexes[session_id]
+        
         faiss_path = self.get_index_path(session_id)
         if os.path.exists(faiss_path):
             os.remove(faiss_path)
@@ -844,8 +1049,15 @@ def clear_context():
     session.pop('text_chunks', None)
     return jsonify({'message': 'Context cleared successfully'}), 200
 
+@app.route('/clear_chat_history', methods=['POST'])
+def clear_chat_history():
+    """Clear the conversation history"""
+    if 'chat_history' in session:
+        session['chat_history'] = []
+    return jsonify({'message': 'Chat history cleared successfully'}), 200
+
 # ================================================================
-# STATIC ROUTES - Google HTML file routes REMOVED
+# STATIC ROUTES
 # ================================================================
 
 @app.route('/sitemap.xml')
@@ -895,7 +1107,7 @@ Sitemap: https://nigat-tutor-ai-btd2.onrender.com/sitemap.xml'''
     return robots_content, 200, {'Content-Type': 'text/plain'}
 
 # ================================================================
-# AI CHAT ROUTE
+# AI CHAT ROUTE (የተሻሻለ - የገፅ ቁጥር በትክክል ይለያል)
 # ================================================================
 
 @app.route('/ask_ai', methods=['POST'])
@@ -906,10 +1118,24 @@ def ask_ai():
     if not user_query:
         return jsonify({"answer": "Please ask a question."})
     
+    # ============================================================
+    # Conversation History Management
+    # ============================================================
+    if 'chat_history' not in session:
+        session['chat_history'] = []
+    
+    # Add user query to history
+    session['chat_history'].append({"role": "user", "content": user_query})
+    
+    # Limit history to prevent excessive size
+    if len(session['chat_history']) > 20:
+        session['chat_history'] = session['chat_history'][-20:]
+    
     query_lang = detect_language(user_query)
     print(f"🔍 Detected language: {query_lang}")
     print(f"📝 User query: {user_query[:100]}...")
     
+    # Extract page range using improved function
     start_page, end_page = extract_page_range(user_query)
     page_range = (start_page, end_page) if start_page is not None else None
     if page_range:
@@ -918,19 +1144,41 @@ def ask_ai():
     session_id = session.get('session_id')
     relevant_chunks = []
     doc_info = None
+    document_pages = 0
     
     if session_id:
         relevant_chunks = rag.get_relevant_chunks(session_id, user_query, max_tokens=4000, page_range=page_range)
         doc_info = rag.get_document_info(session_id)
+        document_pages = rag.get_page_count(session_id)
         if doc_info:
-            print(f"📄 Document: {doc_info.get('filename', 'unknown')} ({doc_info.get('pages', 0)} pages, {doc_info.get('chunk_count', 0)} chunks)")
+            print(f"📄 Document: {doc_info.get('filename', 'unknown')} ({document_pages} pages, {doc_info.get('chunk_count', 0)} chunks)")
     
-    print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
+    # Check if we need to use web search
+    if not relevant_chunks and not use_web_search:
+        if session_id and document_pages > 0:
+            # If document exists but no chunks found for the specific page
+            if page_range:
+                return jsonify({
+                    "answer": f"⚠️ I couldn't find content from pages {start_page}-{end_page} in the uploaded document. The document has {document_pages} pages total.\n\nPlease check the page numbers and try again, or enable web search to get information from the internet.",
+                    "used_web_search": False
+                })
+            else:
+                # No chunks found at all
+                return jsonify({
+                    "answer": "⚠️ I couldn't find relevant information in the uploaded document. Please try rephrasing your question or enable web search.",
+                    "used_web_search": False
+                })
+        else:
+            # No document uploaded, enable web search
+            use_web_search = True
+            print("🌐 Auto-enabling web search - no document")
     
-    is_lesson_plan = any(w in user_query.lower() for w in ['lesson plan', 'daily lesson', 'annual plan', 'semester', 'monthly', 'weekly', 'daily plan'])
-    if query_lang == 'amharic' or (not relevant_chunks and not use_web_search):
+    # If web search is enabled or no context, use it
+    if use_web_search or not relevant_chunks:
         use_web_search = True
-        print("🌐 Auto-enabling web search for Amharic query or no context")
+        
+    print(f"📚 Retrieved {len(relevant_chunks)} relevant chunks")
+    print(f"🌐 Web search: {'Enabled' if use_web_search else 'Disabled'}")
     
     if query_lang == 'amharic':
         language_instruction = "You MUST respond in Amharic (በአማርኛ)."
@@ -1032,9 +1280,11 @@ def ask_ai():
         "If the user asks in English, respond in English with all tables in English. If in Amharic, respond in Amharic with all tables in Amharic."
     )
     
-    answer = get_ai_response(
+    # Get response with history
+    answer = get_ai_response_with_history(
         system_prompt, 
         user_query, 
+        session['chat_history'],
         relevant_chunks if relevant_chunks else None,
         use_web_search=use_web_search,
         page_range=page_range
@@ -1042,10 +1292,12 @@ def ask_ai():
     
     if answer:
         answer = remove_duplicate_sentences(answer)
+        session['chat_history'].append({"role": "assistant", "content": answer})
     
     return jsonify({
         "answer": answer or "⚠️ No AI response available. Please try again later.",
-        "used_web_search": use_web_search
+        "used_web_search": use_web_search,
+        "page_range": page_range
     })
 
 # ================================================================
@@ -1490,13 +1742,15 @@ with app.app_context():
         print(f"📄 Max PDF pages: 50")
         print(f"📝 Max text pages: 10")
         print(f"🌐 Web search: ✅ Enabled")
-        print(f"📖 Page range support: ✅ Enabled")
+        print(f"📖 Page range support: ✅ Enhanced")
         print(f"🔄 Multi-Key Round-Robin: ✅ Enabled")
         print(f"🗣️ Language support: ✅ Amharic and English")
         print(f"🌡️ Temperature: 0.8")
         print(f"✅ Anti-Repetition Rule: ✅ Enabled")
         print(f"✅ Sitemap & Robots routes: ✅ Enabled")
         print(f"✅ Google Meta Tag Verification: ✅ Using HTML tag only")
+        print(f"💬 Conversation Memory: ✅ Enabled")
+        print(f"📄 Page-level chunking: ✅ Enhanced")
     except Exception as e:
         print(f"❌ Failed to create tables: {e}")
 
