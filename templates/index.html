@@ -7,6 +7,9 @@
     <!-- ===== PAGE TITLE ===== -->
     <title>Nigat Tutor AI - Free AI Tutor for Ethiopian Students & Teachers</title>
     
+    <!-- ===== GOOGLE SEARCH CONSOLE VERIFICATION ===== -->
+    <meta name="google-site-verification" content="jKGZdVoN5XX4wFgpl_9k39Jx2bQ3Xd025m6ZP_88MNs" />
+    
     <!-- ===== META DESCRIPTION ===== -->
     <meta name="description" content="Free AI tutor for Ethiopian students and teachers. ለኢትዮጵያ ተማሪዎችና መምህራን ነፃ የ AI አስተማሪ።">
     
@@ -14,7 +17,7 @@
     <meta property="og:title" content="Nigat Tutor AI - ንጋት አስተማሪ AI">
     <meta property="og:description" content="Free AI tutor for Ethiopian students and teachers. ለኢትዮጵያ ተማሪዎችና መምህራን ነፃ የ AI አስተማሪ።">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://nigat-tutor-ai-6.onrender.com">
+    <meta property="og:url" content="https://nigat-tutor-ai-1-rb4d.onrender.com">
     <meta property="og:image" content="https://raw.githubusercontent.com/your-username/your-repo/main/logo.png">
     <meta property="og:site_name" content="Nigat Tutor AI">
     
@@ -25,10 +28,10 @@
     <meta name="twitter:image" content="https://raw.githubusercontent.com/your-username/your-repo/main/logo.png">
     
     <!-- ===== ADDITIONAL META ===== -->
-    <meta name="keywords" content="AI Tutor, Ethiopia, Education, Students, Teachers, Nigat, Free AI, አስተማሪ, ተማሪዎች, መምህራን">
+    <meta name="keywords" content="Nigat Tutor AI, AI Tutor, Ethiopia, Education, Students, Teachers, Free AI, ንጋት አስተማሪ, አስተማሪ, ተማሪዎች, መምህራን">
     <meta name="robots" content="index, follow">
     <meta name="author" content="Teacher Fisaha Melke">
-    <link rel="canonical" href="https://nigat-tutor-ai-6.onrender.com">
+    <link rel="canonical" href="https://nigat-tutor-ai-1-rb4d.onrender.com">
     
     <style>
         /* ===== RESET & BASE ===== */
@@ -769,20 +772,18 @@
             messages.innerHTML = `<p style="color: rgba(255,255,255,0.3);">Start a conversation...</p>`;
             document.getElementById('user-input').value = '';
             document.getElementById('dropdownMenu').classList.remove('show');
-            // Reset textarea height
             const textarea = document.getElementById('user-input');
             textarea.style.height = 'auto';
             textarea.style.height = '50px';
         }
 
-        // ===== UPLOAD PDF (የተሻሻለ - Wait message) =====
+        // ===== UPLOAD PDF =====
         function uploadPDF(input) {
             const file = input.files[0];
             if (!file) return;
             
             const messages = document.getElementById('chat-messages');
             
-            // ⏳ Uploading PDF... Please wait...
             const loadingMsg = document.createElement('div');
             loadingMsg.className = 'loading';
             loadingMsg.id = 'uploadLoading';
@@ -897,7 +898,6 @@
                     voiceBtn.classList.remove('recording');
                     voiceBtn.textContent = '🎤';
                     isRecording = false;
-                    // Auto-expand textarea after voice input
                     const textarea = document.getElementById('user-input');
                     textarea.style.height = 'auto';
                     textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
@@ -967,7 +967,7 @@
             });
         }
 
-        // ===== SEND MESSAGE (የተሻሻለ - Download Word button) =====
+        // ===== SEND MESSAGE =====
         function sendMessage() {
             const input = document.getElementById('user-input');
             const messages = document.getElementById('chat-messages');
@@ -981,7 +981,6 @@
             messages.innerHTML += `<div class="user-msg"><strong>You:</strong> ${query}</div>`;
             messages.innerHTML += `<div class="loading">🤔 Thinking...</div>`;
             input.value = '';
-            // Reset textarea height
             input.style.height = 'auto';
             input.style.height = '50px';
             messages.scrollTop = messages.scrollHeight;
@@ -997,12 +996,10 @@
                 if (loading) loading.remove();
                 const formatted = data.answer.replace(/\n/g, '<br>');
                 
-                // AI መልስ ከDownload አዝራር ጋር
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'ai-msg';
                 msgDiv.innerHTML = `<strong>🤖 Nigat AI:</strong><br>${formatted}`;
                 
-                // Download Word አዝራር
                 const downloadBtn = document.createElement('button');
                 downloadBtn.className = 'btn-download';
                 downloadBtn.textContent = '📥 Download Word';
